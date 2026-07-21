@@ -38,7 +38,7 @@ sharing.
 |-----------------------|---------------------------------|------------------------------------------------|
 | Chat / agents / router | OpenAI (`gpt-4o-mini`)         | AWS Bedrock (`anthropic.claude-3-5-sonnet-*`)  |
 | Embeddings              | HuggingFace (MiniLM, local)    | OpenAI (`text-embedding-3-small`)              |
-| Vector store            | pgvector (docker compose)      | pgvector (helm, on k8s)                        |
+| Vector store            | pgvector (helm, on kind)        | pgvector (helm, on k8s)                        |
 
 Prod chat needs no `OPENAI_API_KEY` for the model itself, but embeddings still call OpenAI —
 both `OPENAI_API_KEY` and AWS credentials (for Bedrock + S3 + optionally Secrets Manager) are
@@ -46,13 +46,42 @@ required in prod.
 
 ## Local development
 
+Local pgvector + app both run via the Helm charts under `helm/`, on the shared `infra-local`
+kind cluster (see `~/projects/infra/local/README.md` for cluster/ingress-nginx setup — this
+app just needs the cluster itself, not ingress-nginx or the shared postgres, since it ships
+its own pgvector StatefulSet):
+
 ```bash
-docker compose up -d --build      # build the app image and start app + postgres(+pgvector)
-docker compose logs -f app
-docker compose down                # add -v to also drop the pgdata volume
+KCTX=kind-infra-local
+
+kubectl --context $KCTX create namespace studio-chatbot   # if it doesn't exist yet
+
+# build + load both images (kind can't pull from the local docker daemon)
+docker build -t senthil-studio-chatbot-pgvector:16 ./db
+kind load docker-image senthil-studio-chatbot-pgvector:16 --name infra-local
+docker build -t senthil-studio-chatbot:latest .
+kind load docker-image senthil-studio-chatbot:latest --name infra-local
+
+helm upgrade --install pgvector helm/pgvector -f helm/pgvector/values.yaml \
+  --namespace studio-chatbot --kube-context $KCTX
+kubectl --context $KCTX -n studio-chatbot rollout status statefulset/pgvector
+
+helm upgrade --install studio-chatbot helm -f helm/values.yaml \
+  --set secrets.openaiApiKey=$OPENAI_API_KEY \
+  --namespace studio-chatbot --kube-context $KCTX
+kubectl --context $KCTX -n studio-chatbot rollout status deployment/studio-chatbot
+
+kubectl --context $KCTX -n studio-chatbot port-forward svc/studio-chatbot 8089:8080
 ```
 
-Or directly:
+```bash
+# teardown
+helm uninstall studio-chatbot pgvector --namespace studio-chatbot --kube-context $KCTX
+```
+
+Or directly, without a cluster at all (fastest inner loop — needs a reachable Postgres,
+e.g. the port-forwarded `pgvector` service above, or any local Postgres with the `vector`
+extension installed):
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
@@ -95,21 +124,15 @@ Both need a live DB + `OPENAI_API_KEY` and are skipped unless explicitly enabled
 RUN_RAGAS_EVALS=1 RUN_ROUTER_EVALS=1 OPENAI_API_KEY=... pytest evals -q
 ```
 
-`.github/workflows/ci.yml` runs `tests` on every push/PR, and `evals` (against a
-`pgvector/pgvector:pg16` service container) on pushes to `main`.
+## Kubernetes / Helm (prod)
 
-## Kubernetes / Helm
-
-Two charts, deployed separately (`helm/pgvector` first, `helm/studio-chatbot` second — the app
-expects `DB_HOST` to resolve to the pgvector chart's release name):
+Two charts, deployed separately (`helm/pgvector` first, the root `helm` chart second — the app
+expects `DB_HOST` to resolve to the pgvector chart's release name). For local (kind) use, see
+"Local development" above — same charts, `values.yaml` instead of `values-prod.yaml`:
 
 ```bash
-helm install pgvector helm/pgvector -f helm/pgvector/values.yaml
-helm install studio-chatbot helm/studio-chatbot -f helm/studio-chatbot/values.yaml
-
-# prod
 helm install pgvector helm/pgvector -f helm/pgvector/values-prod.yaml
-helm install studio-chatbot helm/studio-chatbot -f helm/studio-chatbot/values-prod.yaml \
+helm install studio-chatbot helm -f helm/values-prod.yaml \
   --set secrets.dbPassword=... \
   --set config.dbSecretName=/rds/... \
   --set config.awsRegion=us-east-1
