@@ -1,0 +1,35 @@
+image:
+  repository: senthil-studio-chatbot
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+environment: local
+
+config:
+  appProfile: local
+  dbHost: pgvector
+  dbPort: "5432"
+  dbName: studio
+  dbUser: studio
+  faqS3Bucket: senthil-studio-faq
+  faqS3Key: faq.md
+  chatModelName: gpt-4o-mini
+
+# Local/dev only -- populated straight into a Secret. Prod overrides these via
+# values-prod.yaml + --set-file/--set from a secret manager, never checked in real.
+secrets:
+  openaiApiKey: ""
+  dbPassword: studio
+
+service:
+  port: 8080
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi

@@ -1,0 +1,30 @@
+image:
+  repository: senthil-studio-chatbot-pgvector
+  tag: "16"
+  pullPolicy: IfNotPresent
+
+environment: local
+
+auth:
+  database: studio
+  username: studio
+  # Local/dev default. Prod should override via --set or a values-prod.yaml secret ref
+  # rather than checking a real password into this file.
+  password: studio
+
+service:
+  port: 5432
+
+persistence:
+  size: 5Gi
+  # storageClassName left unset -> uses the cluster default. Set explicitly per-env
+  # if the target cluster needs one (e.g. a specific EBS-backed StorageClass in prod).
+  storageClassName: ""
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi

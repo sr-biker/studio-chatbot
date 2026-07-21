@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "pgvector.name" . }}
+  labels:
+    {{- include "pgvector.labels" . | nindent 4 }}
+spec:
+  # Headless -- the app connects by pod-stable DNS via the StatefulSet's serviceName,
+  # not a load-balanced ClusterIP (only one replica exists anyway).
+  clusterIP: None
+  selector:
+    {{- include "pgvector.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: postgres
+      port: {{ .Values.service.port }}
+      targetPort: postgres

@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: pytest tests -q
+
+  # Offline quality evals (RAGAS + openai/evals-style) -- need a live Postgres and an
+  # OPENAI_API_KEY, so kept as a separate gated job rather than folded into unit-tests.
+  # Runs on push to main only; PRs from forks won't have OPENAI_API_KEY available.
+  evals:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    services:
+      postgres:
+        # pgvector/pgvector ships the extension preinstalled -- avoids apt-installing it
+        # by hand inside the plain postgres:16 image, which the `services:` block can't do.
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: studio
+          POSTGRES_USER: studio
+          POSTGRES_PASSWORD: studio
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      APP_PROFILE: local
+      DB_HOST: localhost
+      DB_NAME: studio
+      DB_USER: studio
+      DB_PASSWORD: studio
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      RUN_RAGAS_EVALS: "1"
+      RUN_ROUTER_EVALS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Enable pgvector extension
+        run: |
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+          PGPASSWORD=studio psql -h localhost -U studio -d studio -c 'CREATE EXTENSION IF NOT EXISTS vector;' || true
+      - run: pytest evals -q

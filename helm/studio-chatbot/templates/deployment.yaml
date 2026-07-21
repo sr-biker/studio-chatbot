@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "studio-chatbot.name" . }}
+  labels:
+    {{- include "studio-chatbot.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "studio-chatbot.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "studio-chatbot.selectorLabels" . | nindent 8 }}
+    spec:
+      # In prod, AWS Bedrock/S3/Secrets Manager calls need real IAM permissions --
+      # attach via IRSA (service account annotated with an IAM role ARN) rather than
+      # static keys. Set serviceAccountName + the annotation on that ServiceAccount
+      # at deploy time; left unset here since it's account/cluster specific.
+      {{- if .Values.serviceAccountName }}
+      serviceAccountName: {{ .Values.serviceAccountName }}
+      {{- end }}
+      containers:
+        - name: studio-chatbot
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "studio-chatbot.name" . }}-config
+            - secretRef:
+                name: {{ include "studio-chatbot.name" . }}-secrets
+          ports:
+            - name: http
+              containerPort: 8080
+          # Startup runs migrations + FAQ ingestion (S3 fetch + embedding), which can
+          # take longer than a typical readiness window on first boot -- generous
+          # startupProbe budget so it isn't killed mid-ingestion.
+          startupProbe:
+            httpGet:
+              path: /docs
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /docs
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /docs
+              port: http
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
