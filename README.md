@@ -1,11 +1,9 @@
 # studio-chatbot
 
-FastAPI + LangChain chatbot for a fitness studio. FAQ knowledge (`s3://senthil-studio-faq/faq.md`)
+FastAPI + LangChain chatbot for a fitness studio. FAQ knowledge in S3
 is chunked and embedded into pgvector for RAG; an incoming message is routed to one of three
 named agents — **membership_registration**, **support**, **general** — each grounded in the
-FAQ via a shared retrieval tool. Structurally a port of the `premed-python` pattern
-(`config`/`ai_config`/`router`/`assistant`/`main` split, migrations, compose, Dockerfile) with
-the domain swapped from pre-med admissions to a gym.
+FAQ via a shared retrieval tool. 
 
 ## Architecture
 
