@@ -56,9 +56,8 @@ KCTX=kind-infra-local
 
 kubectl --context $KCTX create namespace studio-chatbot   # if it doesn't exist yet
 
-# build + load both images (kind can't pull from the local docker daemon)
-docker build -t senthil-studio-chatbot-pgvector:16 ./db
-kind load docker-image senthil-studio-chatbot-pgvector:16 --name infra-local
+# pgvector uses the public pgvector/pgvector:pg16 image directly -- only the app
+# image needs building + loading (kind can't pull from the local docker daemon)
 docker build -t senthil-studio-chatbot:latest .
 kind load docker-image senthil-studio-chatbot:latest --name infra-local
 
@@ -147,7 +146,9 @@ Notes:
   (`s3:GetObject` on `senthil-studio-faq/faq.md`), and optionally Secrets Manager — attach via
   IRSA (`serviceAccountName` + annotated `ServiceAccount`, cluster/account-specific, not
   templated here) rather than static keys.
-- `values-prod.yaml` in both charts has `<ECR_REPO_URL>` placeholders and no real secrets —
+- `pgvector` runs the public `pgvector/pgvector:pg16` image directly (extension is prebuilt in),
+  so it needs no image build/ECR mirror of its own, local or prod.
+- The app chart's `values-prod.yaml` has an `<ECR_REPO_URL>` placeholder and no real secrets —
   fill in at deploy time from wherever this org keeps prod credentials, never check them in.
 
 ## Known divergences / simplifications

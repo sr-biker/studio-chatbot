@@ -1,6 +1,7 @@
 image:
-  repository: senthil-studio-chatbot-pgvector
-  tag: "16"
+  # Official image, extension already built in -- no custom Dockerfile/build step needed.
+  repository: pgvector/pgvector
+  tag: "pg16"
   pullPolicy: IfNotPresent
 
 environment: local

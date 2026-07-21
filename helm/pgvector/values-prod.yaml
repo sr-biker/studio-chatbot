@@ -1,6 +1,7 @@
 image:
-  repository: "<ECR_REPO_URL>/senthil-studio-chatbot-pgvector"
-  tag: "16"
+  # Official image -- same as local, no ECR mirror needed since nothing is custom-built anymore.
+  repository: pgvector/pgvector
+  tag: "pg16"
 
 environment: prod
 
