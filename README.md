@@ -104,7 +104,7 @@ curl -s -X POST http://localhost:8089/chat \
 # -> {"agent":"...", "reply":"...", "session_id":"..."} — pass session_id back on later
 # calls in the same conversation so the summarize agent has history when you say "resolved"
 
-curl -s 'http://localhost:8089/faq/search?q=refund+policy'
+curl -s 'http://localhost:8089/internal/faq/search?q=refund+policy'
 ```
 
 ## Testing
@@ -210,7 +210,7 @@ Notes:
     lint (root user, unpinned base image, etc).
   - DAST: [OWASP ZAP](https://www.zaproxy.org/) baseline scan against a running deploy (kind
     locally or staging) — FastAPI's auto-generated `/openapi.json` lets ZAP target the two real
-    endpoints (`/chat`, `/faq/search`) instead of a blind crawl.
+    endpoints (`/chat`, `/internal/faq/search`) instead of a blind crawl.
   - Wire the SAST/dependency/image steps into CodeBuild before the `docker build`/push stage
     (fail fast); run ZAP post-deploy against staging, never directly against prod.
 - **Multi-provider abstraction.** `app/ai_config.py` constructs `ChatOpenAI`/`OpenAIEmbeddings`
@@ -223,3 +223,23 @@ Notes:
   name + any provider-specific kwargs) so `chat_model()`/`embedding_model()` stay call sites,
   not the place provider-specific branching lives. Not worth building speculatively before
   there's a second provider actually in play.
+- **Static type checking.** No `mypy`/`pyright` (or similar) runs anywhere in this repo today,
+  so type hints are documentation only, not enforced — see the FastAPI Java/Python discussion
+  above. Add a checker (as a CI step, same place SAST would run) and reintroduce parameter/
+  return annotations (e.g. `app/tools/faq.py`'s `top_k`, `app/main.py`'s `faq_search`'s `topK`,
+  currently left unannotated) once there's a checker actually consuming them.
+- **Retry transient model-call failures.** Neither `Assistant.chat()`'s `self._model.invoke(...)`
+  nor `Router._classify()`'s `self._router_chat_model.invoke(...)` retry on transient OpenAI API
+  errors (rate limits, timeouts, connection resets) — today those just propagate as a 500.
+  Wrap the actual `.invoke()` calls with [tenacity](https://github.com/jd/tenacity)
+  (`@retry(stop=stop_after_attempt(3), wait=wait_exponential(...))`, retrying on the relevant
+  `openai`/`httpx` exception types) around each model call site, not around
+  `Assistant.chat()`'s tool-calling loop as a whole — that loop already has its own bounded
+  iteration count (`MAX_TOOL_ITERATIONS`) for a different reason (walking a multi-step tool-use
+  conversation to completion, not retrying a failed call) and shouldn't be conflated with retry.
+- **Keycloak-based JWT authentication.** `POST /chat` and `GET /internal/faq/search` (renamed
+  from `/faq/search` -- the prefix marks it as not meant for public traffic, but nothing
+  currently enforces that) are both unauthenticated. Add a FastAPI dependency that validates a
+  bearer JWT issued by this org's existing Keycloak (see `~/mystudio/authapi` for the Keycloak
+  setup already in use elsewhere) against its JWKS endpoint, and require it on both routes --
+  `/internal/*` at minimum, `/chat` too if end users should be identified rather than anonymous.

@@ -7,7 +7,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
-MIGRATIONS_DIR = BASE_DIR / "db_migrations"
 
 
 class Settings(BaseSettings):

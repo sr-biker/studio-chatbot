@@ -6,8 +6,13 @@ Endpoints:
                         app.router.Router. Pass back the returned session_id on subsequent
                         calls to keep them in the same conversation (needed so SUMMARIZE has
                         history to summarize -- e.g. saying "resolved" summarizes the session
-                        so far, not the literal word "resolved").
-  GET  /faq/search   -> raw vector-search hits against the FAQ store, no LLM
+                        so far, not the literal word "resolved"). Every turn is logged
+                        (session_id, route, message, reply) for debugging/observability,
+                        instead of exposing retrieval internals over the network.
+  GET  /internal/faq/search -> raw vector-search hits against the FAQ store, no LLM.
+                        /internal prefix marks it as not meant for public/end-user traffic
+                        (widgets, evals, debugging) -- no auth enforced on it yet, see
+                        "Next steps" in README.
 """
 
 import logging
@@ -28,7 +33,6 @@ from app.ai_config import chat_model, router_chat_model, summarize_model
 from app.assistant import Assistant
 from app.config import settings
 from app.faq_loader import load_faq_knowledge
-from app.migrate import run_migrations
 from app.router import Route, Router
 from app.session_store import SessionStore
 from app.tools.faq import TOOLS as FAQ_TOOLS, search_faq_raw
@@ -47,9 +51,9 @@ class AppState(TypedDict):
 async def lifespan(app: FastAPI):
     """FastAPI lifespan: runs startup work once, then shares built state via request.state.
 
-    Runs DB migrations and FAQ ingestion, builds the shared chat model and one Assistant
-    per Route, and constructs the Router and SessionStore -- all yielded as a dict so
-    each field is reachable as request.state.<key> in endpoint handlers.
+    Runs FAQ ingestion, builds the shared chat model and one Assistant per Route, and
+    constructs the Router and SessionStore -- all yielded as a dict so each field is
+    reachable as request.state.<key> in endpoint handlers.
 
     Args:
         app: The FastAPI app instance (required by the lifespan protocol, unused here).
@@ -57,7 +61,6 @@ async def lifespan(app: FastAPI):
     Yields:
         An AppState dict: {"assistants": ..., "router": ..., "sessions": ...}.
     """
-    run_migrations()
     load_faq_knowledge()
 
     model = chat_model()
@@ -116,6 +119,13 @@ def chat(chat_request: ChatRequest, request: Request) -> ChatResponse:
         reply = request.state.assistants[route].chat(chat_request.message)
 
     sessions.append_turn(session_id, chat_request.message, reply)
+    log.info(
+        "chat session=%s route=%s message=%r reply=%r",
+        session_id,
+        route.value,
+        chat_request.message,
+        reply,
+    )
     return ChatResponse(agent=route.value.lower(), reply=reply, session_id=session_id)
 
 
@@ -125,7 +135,7 @@ class FaqSnippet(BaseModel):
     text: str
 
 
-@app.get("/faq/search", response_model=list[FaqSnippet])
+@app.get("/internal/faq/search", response_model=list[FaqSnippet])
 def faq_search(q: str, topK: int | None = None) -> list[FaqSnippet]:
     """Runs a raw FAQ similarity search, bypassing the LLM/router entirely.
 

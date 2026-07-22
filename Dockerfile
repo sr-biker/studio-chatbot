@@ -5,7 +5,6 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app app
-COPY db_migrations db_migrations
 COPY data data
 
 EXPOSE 8080
