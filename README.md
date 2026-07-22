@@ -1,12 +1,47 @@
 # studio-chatbot
 
-FastAPI + LangChain chatbot for a fitness studio. FAQ knowledge in S3
+FastAPI + LangChain chatbot for a fitness studio. FAQ knowledge in a Google Doc
 is chunked and embedded into pgvector for RAG; an incoming message is routed to one of four
 named agents — **membership_registration**, **support**, **general** — each grounded in the
 FAQ via a shared retrieval tool, plus **summarize**, a cheap-tier agent with no FAQ tool for
 tl;dr-style requests or recapping a session once it's marked **resolved**. Each `/chat` call
 returns a `session_id` (server-side, in-memory history) that the client passes back on
 subsequent calls so summarize has a transcript to work with.
+
+## Status: what's built so far
+
+- **Core chat + RAG.** Four named agents (`membership_registration`, `support`, `general`,
+  `summarize`) behind a keyword-then-LLM router; FAQ retrieval grounds three of them via a
+  shared LangChain tool over pgvector; `summarize` recaps a session on trigger words like
+  "resolved"/"tldr" using server-side session history (`app/session_store.py`).
+- **FAQ pipeline, decoupled from the app pod.** The FAQ source is a Google Doc (service
+  account auth, `app/faq_loader.py`) — the product team edits it directly, no deploy needed
+  to publish a change. Embedding/ingestion runs offline as a Kubernetes `Job`
+  (`scripts/ingest_faq.py`, `ingestJob.enabled`), idempotent on a whole-document content hash.
+  The app pod itself only does a **best-effort, read-only freshness check** at startup
+  (`check_faq_freshness()`) — logs a warning if pgvector has drifted, never re-embeds, and
+  never blocks/crash-loops startup if Drive is unreachable.
+- **Runtime safety.** Every `/chat` message is checked against OpenAI's Moderation API before
+  reaching any agent or the session store; flagged messages get a 400.
+- **Observability.** Every chat turn is logged in one line (session_id, route, message, reply);
+  gaps (metrics, tracing, alerting) are named explicitly rather than silently absent — see
+  "Observability" below.
+- **Evals.** Offline/CI-gated router-accuracy and RAGAS (faithfulness/relevancy/context-precision)
+  suites, kept separate from runtime guardrails.
+- **Deployment.** Helm charts for both the app and pgvector (StatefulSet), deployed and
+  exercised against a local `kind` cluster and structured for prod (`values-prod.yaml`,
+  `replicaCount: 2`, IRSA-ready service account, Secrets Manager for DB creds).
+- **Evolvability.** A documented, validated zero-downtime pattern for both pgvector version
+  upgrades and FAQ content changes: stand up a fresh pgvector release, (re-)ingest into it
+  offline, cut the app over via `config.dbHost`, tear down the old release — safe because
+  pgvector here is a pure, re-derivable FAQ cache, never primary data (see "Evolvability"
+  below).
+- **Simplification.** The one-time DB migration mechanism was removed entirely (single
+  release, `CREATE EXTENSION vector` lives in pgvector's own init script) rather than kept
+  around for a migration path that doesn't exist yet.
+- **Explicitly not done yet** — real booking/registration API calls, Keycloak-based auth,
+  session state in a real transactional store, and everything else tracked in "Next steps"
+  below; these are scoped decisions, not oversights.
 
 ## Architecture
 
@@ -22,11 +57,13 @@ POST /chat --> Router (keyword short-circuit, then LLM classifier)
                  +--> SUMMARIZE agent (gpt-5-nano, no tools)
 ```
 
-- `app/faq_loader.py` — pulls `faq.md` (S3 in prod — the single source of truth; `data/faq.md`
-  in local, gitignored, not checked in, so place your own copy there before running locally),
-  splits it by markdown header (one chunk per FAQ section), and ingests into pgvector. Idempotent
-  on a content hash — re-running with unchanged FAQ text is a no-op; changed text deletes and
-  re-ingests.
+- `app/faq_loader.py` — pulls `faq.md` (a Google Doc in prod — the single source of truth, so
+  the product team can edit it directly, no deploy step; `data/faq.md` in local, gitignored,
+  not checked in, so place your own copy there before running locally), splits it by markdown
+  header (one chunk per FAQ section), and ingests into pgvector. Idempotent on a content hash
+  — re-running with unchanged FAQ text is a no-op; changed text deletes and re-ingests. Runs
+  offline (`scripts/ingest_faq.py`, a Kubernetes `Job`), not from the app pod's own startup —
+  see `docs/WORKFLOWS.md` workflows 1 and 1b.
 - `app/router.py` — cheap keyword short-circuit (join/register/membership/etc → membership
   registration) then a temperature-0 LLM classifier for anything ambiguous.
 - `app/agents/` — one system prompt per named agent, all sharing the same FAQ retrieval tool
