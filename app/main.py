@@ -1,25 +1,36 @@
 """FastAPI app.
 
 Endpoints:
-  POST /chat        -> {"reply": "..."} — routed to a named agent (membership_registration,
-                        support, or general) via app.router.Router
+  POST /chat        -> {"reply": "...", "session_id": "..."} — routed to a named agent
+                        (membership_registration, support, general, or summarize) via
+                        app.router.Router. Pass back the returned session_id on subsequent
+                        calls to keep them in the same conversation (needed so SUMMARIZE has
+                        history to summarize -- e.g. saying "resolved" summarizes the session
+                        so far, not the literal word "resolved").
   GET  /faq/search   -> raw vector-search hits against the FAQ store, no LLM
 """
 
 import logging
+import uuid
 from contextlib import asynccontextmanager
 from typing import TypedDict
 
 from fastapi import FastAPI, Request
 from pydantic import BaseModel
 
-from app.agents import GENERAL_SYSTEM_PROMPT, MEMBERSHIP_REGISTRATION_SYSTEM_PROMPT, SUPPORT_SYSTEM_PROMPT
-from app.ai_config import chat_model, router_chat_model
+from app.agents import (
+    GENERAL_SYSTEM_PROMPT,
+    MEMBERSHIP_REGISTRATION_SYSTEM_PROMPT,
+    SUMMARIZE_SYSTEM_PROMPT,
+    SUPPORT_SYSTEM_PROMPT,
+)
+from app.ai_config import chat_model, router_chat_model, summarize_model
 from app.assistant import Assistant
 from app.config import settings
 from app.faq_loader import load_faq_knowledge
 from app.migrate import run_migrations
 from app.router import Route, Router
+from app.session_store import SessionStore
 from app.tools.faq import TOOLS as FAQ_TOOLS, search_faq_raw
 
 logging.basicConfig(level=logging.INFO)
@@ -29,6 +40,7 @@ log = logging.getLogger(__name__)
 class AppState(TypedDict):
     assistants: dict[Route, Assistant]
     router: Router
+    sessions: SessionStore
 
 
 @asynccontextmanager
@@ -41,11 +53,14 @@ async def lifespan(app: FastAPI):
         Route.MEMBERSHIP_REGISTRATION: Assistant(model, MEMBERSHIP_REGISTRATION_SYSTEM_PROMPT, FAQ_TOOLS),
         Route.SUPPORT: Assistant(model, SUPPORT_SYSTEM_PROMPT, FAQ_TOOLS),
         Route.GENERAL: Assistant(model, GENERAL_SYSTEM_PROMPT, FAQ_TOOLS),
+        # No FAQ tool -- summarizing the user's own text shouldn't be grounded in studio FAQ.
+        Route.SUMMARIZE: Assistant(summarize_model(), SUMMARIZE_SYSTEM_PROMPT),
     }
     router = Router(router_chat_model())
+    sessions = SessionStore()
 
     log.info("studio-chatbot started (profile=%s)", settings.app_profile)
-    yield {"assistants": assistants, "router": router}
+    yield {"assistants": assistants, "router": router, "sessions": sessions}
 
 
 app = FastAPI(title="studio-chatbot", lifespan=lifespan)
@@ -53,18 +68,31 @@ app = FastAPI(title="studio-chatbot", lifespan=lifespan)
 
 class ChatRequest(BaseModel):
     message: str
+    session_id: str | None = None
 
 
 class ChatResponse(BaseModel):
     agent: str
     reply: str
+    session_id: str
 
 
 @app.post("/chat", response_model=ChatResponse)
 def chat(chat_request: ChatRequest, request: Request) -> ChatResponse:
+    session_id = chat_request.session_id or str(uuid.uuid4())
+    sessions = request.state.sessions
     route = request.state.router.route(chat_request.message)
-    reply = request.state.assistants[route].chat(chat_request.message)
-    return ChatResponse(agent=route.value.lower(), reply=reply)
+
+    if route == Route.SUMMARIZE:
+        # Summarize the session's history so far, not the literal trigger message
+        # ("resolved", "tldr", ...) -- that message carries no content of its own.
+        transcript = sessions.transcript(session_id)
+        reply = request.state.assistants[route].chat(transcript or chat_request.message)
+    else:
+        reply = request.state.assistants[route].chat(chat_request.message)
+
+    sessions.append_turn(session_id, chat_request.message, reply)
+    return ChatResponse(agent=route.value.lower(), reply=reply, session_id=session_id)
 
 
 class FaqSnippet(BaseModel):

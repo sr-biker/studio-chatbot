@@ -16,6 +16,7 @@ config:
   faqS3Bucket: senthil-studio-faq
   faqS3Key: faq.md
   chatModelName: gpt-4o-mini
+  summarizeModelName: gpt-5-nano
 
 # Local/dev only -- populated straight into a Secret. Prod overrides these via
 # values-prod.yaml + --set-file/--set from a secret manager, never checked in real.

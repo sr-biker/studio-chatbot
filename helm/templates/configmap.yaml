@@ -15,6 +15,9 @@ data:
   {{- if .Values.config.chatModelName }}
   CHAT_MODEL_NAME: {{ .Values.config.chatModelName | quote }}
   {{- end }}
+  {{- if .Values.config.summarizeModelName }}
+  SUMMARIZE_MODEL_NAME: {{ .Values.config.summarizeModelName | quote }}
+  {{- end }}
   {{- if .Values.config.awsRegion }}
   AWS_REGION: {{ .Values.config.awsRegion | quote }}
   {{- end }}

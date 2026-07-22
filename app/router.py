@@ -19,14 +19,18 @@ category word — no punctuation, no explanation:
   happy hour, etc), waitlists, day passes.
 - SUPPORT: general questions, complaints, policies, hours, what to bring, refunds,
   anything that isn't directly about signing up for membership or a class.
+- SUMMARIZE: the user is explicitly asking for a summary/tl;dr/shorter version of text they've
+  pasted or written, or is marking the conversation/issue as resolved (wants a recap/closing
+  summary of this session), not a studio question at all.
 - GENERAL: greetings or anything that doesn't fit the above.
-Reply with one of: MEMBERSHIP_REGISTRATION, SUPPORT, GENERAL.
+Reply with one of: MEMBERSHIP_REGISTRATION, SUPPORT, SUMMARIZE, GENERAL.
 """
 
 
 class Route(str, Enum):
     MEMBERSHIP_REGISTRATION = "MEMBERSHIP_REGISTRATION"
     SUPPORT = "SUPPORT"
+    SUMMARIZE = "SUMMARIZE"
     GENERAL = "GENERAL"
 
 
@@ -36,6 +40,7 @@ _MEMBERSHIP_KW = re.compile(
     r"\b(join|sign up|signup|register|registration|enroll|membership|waitlist|day pass|cancel my)\b",
     re.IGNORECASE,
 )
+_SUMMARIZE_KW = re.compile(r"\b(summarize|summarise|tl;?dr|tldr|shorten|sum up|resolved)\b", re.IGNORECASE)
 
 
 class Router:
@@ -58,6 +63,8 @@ class Router:
     def _keyword_route(m: str) -> Route | None:
         if _MEMBERSHIP_KW.search(m):
             return Route.MEMBERSHIP_REGISTRATION
+        if _SUMMARIZE_KW.search(m):
+            return Route.SUMMARIZE
         return None
 
     def _classify(self, message: str) -> Route:

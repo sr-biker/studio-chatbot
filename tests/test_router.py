@@ -23,6 +23,18 @@ def test_register_keyword_routes_to_membership_registration():
     mock_model.invoke.assert_not_called()
 
 
+def test_summarize_keyword_routes_to_summarize_without_calling_model():
+    router, mock_model = _router_with_mock()
+    assert router.route("Can you tldr this for me?") == Route.SUMMARIZE
+    mock_model.invoke.assert_not_called()
+
+
+def test_resolved_keyword_routes_to_summarize_without_calling_model():
+    router, mock_model = _router_with_mock()
+    assert router.route("This is resolved, thanks!") == Route.SUMMARIZE
+    mock_model.invoke.assert_not_called()
+
+
 def test_ambiguous_message_falls_back_to_classifier():
     router, mock_model = _router_with_mock()
     mock_model.invoke.return_value = MagicMock(content="SUPPORT")

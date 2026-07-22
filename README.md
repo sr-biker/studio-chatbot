@@ -1,9 +1,12 @@
 # studio-chatbot
 
 FastAPI + LangChain chatbot for a fitness studio. FAQ knowledge in S3
-is chunked and embedded into pgvector for RAG; an incoming message is routed to one of three
+is chunked and embedded into pgvector for RAG; an incoming message is routed to one of four
 named agents — **membership_registration**, **support**, **general** — each grounded in the
-FAQ via a shared retrieval tool. 
+FAQ via a shared retrieval tool, plus **summarize**, a cheap-tier agent with no FAQ tool for
+tl;dr-style requests or recapping a session once it's marked **resolved**. Each `/chat` call
+returns a `session_id` (server-side, in-memory history) that the client passes back on
+subsequent calls so summarize has a transcript to work with.
 
 ## Architecture
 
@@ -13,6 +16,7 @@ POST /chat --> Router (keyword short-circuit, then LLM classifier)
                  +--> MEMBERSHIP_REGISTRATION agent --> search_studio_faq tool --> pgvector
                  +--> SUPPORT agent                 --> search_studio_faq tool --> pgvector
                  +--> GENERAL agent                  --> search_studio_faq tool --> pgvector
+                 +--> SUMMARIZE agent (gpt-5-nano, no tools)
 ```
 
 - `app/faq_loader.py` — pulls `faq.md` (S3 in prod — the single source of truth; `data/faq.md`
@@ -24,6 +28,9 @@ POST /chat --> Router (keyword short-circuit, then LLM classifier)
   registration) then a temperature-0 LLM classifier for anything ambiguous.
 - `app/agents/` — one system prompt per named agent, all sharing the same FAQ retrieval tool
   and tool-calling loop (`app/assistant.py`).
+- `app/session_store.py` — in-memory, per-process history keyed by `session_id`; single pod
+  today, so history doesn't survive a restart or span replicas (fine for summarizing a live
+  session; would need a shared store like Redis if that mattered).
 
 ## Embedding models: local vs. prod
 
@@ -38,6 +45,7 @@ sharing.
 | Component            | local                          | prod                                          |
 |-----------------------|---------------------------------|------------------------------------------------|
 | Chat / agents / router | OpenAI (`gpt-4o-mini`)         | OpenAI (`gpt-4o-mini`, override via `chatModelName`) |
+| Summarize agent         | OpenAI (`gpt-5-nano`)          | OpenAI (`gpt-5-nano`, override via `summarizeModelName`) |
 | Embeddings              | HuggingFace (MiniLM, local)    | OpenAI (`text-embedding-3-small`)              |
 | Vector store            | pgvector (helm, on kind)        | pgvector (helm, on k8s)                        |
 
@@ -93,6 +101,8 @@ uvicorn app.main:app --reload --port 8080
 curl -s -X POST http://localhost:8089/chat \
   -H 'Content-Type: application/json' \
   -d '{"message":"How do I sign up for the yoga class?"}'
+# -> {"agent":"...", "reply":"...", "session_id":"..."} — pass session_id back on later
+# calls in the same conversation so the summarize agent has history when you say "resolved"
 
 curl -s 'http://localhost:8089/faq/search?q=refund+policy'
 ```
@@ -159,3 +169,32 @@ Notes:
   portal, mobile app, or front desk"); this bot explains policy and process, it doesn't call a
   booking API (there isn't one in scope here).
 - Evals are offline/CI-gated only, not runtime guardrails — see "Evals" above.
+
+## Next steps
+
+- **Session state in Postgres, not in-memory.** `app/session_store.py` is per-process and lost
+  on pod restart/across replicas — fine for a single pod, not for `values-prod.yaml`'s
+  `replicaCount: 2` without session affinity. Move it to a `sessions`/`session_messages` table
+  in the existing pgvector Postgres (or a separate store if load ever warrants it) so any pod
+  can serve any `session_id` and history survives restarts and deploys.
+- **Real booking/registration API calls.** Per "Known divergences" above, membership/support
+  are advisory-only today. Wiring `MEMBERSHIP_REGISTRATION`'s agent to an actual booking API
+  (as a tool, same shape as `search_studio_faq`) would move it from "explains the process" to
+  "completes the transaction."
+- **Agentic invocation of this API.** Right now every caller is a human via `/chat`. As other
+  internal services or agents start calling studio-chatbot programmatically (e.g. an
+  orchestrator agent treating this service as one of its own tools), that likely means:
+  - a machine-facing auth path (API key/service token) distinct from the human session flow,
+  - a stable, documented request/response contract (this README's `/chat` shape becomes a real
+    API contract, not just human-readable docs),
+  - and probably a dedicated route/flag rather than overloading the same `/chat` + keyword-router
+    path both humans and agents hit — an agent calling in doesn't need the keyword short-circuit
+    or classifier, it can specify the target agent directly.
+- **Session affinity or a shared store, whichever comes first.** Until Postgres-backed sessions
+  land, `sessionAffinity: ClientIP` on the Service is a cheap stopgap so `SUMMARIZE`/"resolved"
+  reliably hits the pod holding that session's history in prod.
+- **Multi-turn tool loop history.** `Assistant.chat()` only sees the current message plus its
+  own tool-call loop, not prior turns — once sessions are Postgres-backed, feeding stored
+  history into the agent's own messages (not just the summarize agent) would let
+  membership/support/general hold a real multi-turn conversation instead of treating each
+  message independently.

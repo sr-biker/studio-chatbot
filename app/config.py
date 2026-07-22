@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     # OpenAI direct for chat/agents in both profiles -- local defaults to gpt-4o-mini, prod
     # overrides CHAT_MODEL_NAME via values-prod.yaml. OpenAI direct also used for prod embeddings.
     chat_model_name: str = "gpt-4o-mini"
+    # Cheap/fast tier for the summarize agent -- no tool-calling loop, short outputs, doesn't
+    # need chat_model_name's quality; gpt-5-nano is OpenAI's Haiku-equivalent tier.
+    summarize_model_name: str = "gpt-5-nano"
     embedding_model_name: str = "sentence-transformers/all-MiniLM-L6-v2"
     openai_embedding_model_name: str = "text-embedding-3-small"
 

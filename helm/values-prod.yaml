@@ -17,6 +17,8 @@ config:
   # Chat model is OpenAI direct, same as local -- override to a stronger model for prod here
   # if desired (e.g. gpt-4o); OPENAI_API_KEY (secrets.openaiApiKey) is required either way.
   chatModelName: gpt-4o-mini
+  # Cheap/fast tier for the summarize agent -- gpt-5-nano is OpenAI's Haiku-equivalent tier.
+  summarizeModelName: gpt-5-nano
   # prod also needs DB_SECRET_NAME + AWS_REGION -- set via --set at deploy time (not checked
   # in) since they're environment/account specific.
 

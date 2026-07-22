@@ -26,6 +26,12 @@ def router_chat_model():
 
 
 @lru_cache
+def summarize_model():
+    """Cheap/fast tier for the summarize agent -- see settings.summarize_model_name."""
+    return ChatOpenAI(model=settings.summarize_model_name, api_key=settings.openai_api_key)
+
+
+@lru_cache
 def embedding_model():
     if settings.app_profile == "prod":
         from langchain_openai import OpenAIEmbeddings
