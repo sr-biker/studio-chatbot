@@ -345,3 +345,14 @@ Two different kinds of upgrade, two different risk profiles:
   user -- scope it tightly (only the `impersonation` permission, only fires after a fresh OTP
   verification, short-lived tokens), and log every exchange (ties into the moderation-style
   logging already on `/chat`) rather than running it as a broad admin credential.
+- **On-demand FAQ re-ingestion + pgvector index maintenance (Maintainability).** Today, picking
+  up an edited FAQ requires a full pod restart (`lifespan()` re-runs `load_faq_knowledge()` on
+  startup) — there's no way to trigger it on demand. Add an internal endpoint (e.g.
+  `POST /internal/faq/reindex`, alongside `/internal/faq/search`, same auth boundary once
+  Keycloak JWT auth lands above) that calls `load_faq_knowledge()` directly. Also worth
+  scripting periodic `VACUUM ANALYZE` on `langchain_pg_embedding` after a re-ingest (the
+  delete-then-add pattern in `app/faq_loader.py` churns rows), and checking whether the
+  `langchain-postgres` version in use creates an IVFFlat vs HNSW index for this collection --
+  IVFFlat degrades more under churn and would benefit from an occasional `REINDEX` more than
+  HNSW would. Low priority at this FAQ's current size (single small document), worth revisiting
+  if the FAQ corpus grows enough for chunk count or update frequency to matter.
