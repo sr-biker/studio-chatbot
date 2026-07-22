@@ -15,7 +15,8 @@ POST /chat --> Router (keyword short-circuit, then LLM classifier)
                  +--> GENERAL agent                  --> search_studio_faq tool --> pgvector
 ```
 
-- `app/faq_loader.py` — pulls `faq.md` (S3 in prod, checked-in `data/faq.md` copy in local),
+- `app/faq_loader.py` — pulls `faq.md` (S3 in prod — the single source of truth; `data/faq.md`
+  in local, gitignored, not checked in, so place your own copy there before running locally),
   splits it by markdown header (one chunk per FAQ section), and ingests into pgvector. Idempotent
   on a content hash — re-running with unchanged FAQ text is a no-op; changed text deletes and
   re-ingests.

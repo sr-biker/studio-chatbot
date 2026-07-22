@@ -1,7 +1,9 @@
 """Loads the studio's FAQ markdown and ingests it into the pgvector store for RAG.
 
 Source is profile-gated: prod reads the live object from S3 (s3://<FAQ_S3_BUCKET>/<FAQ_S3_KEY>),
-local reads a checked-in copy at data/faq.md (avoids requiring AWS creds for a laptop dev loop).
+which is the single source of truth; local reads data/faq.md instead (avoids requiring AWS
+creds for a laptop dev loop), gitignored rather than checked in so there's no second copy that
+can drift from S3 -- pull/place your own copy there before running locally.
 Chunked by markdown header (## sections — one per topic: General Membership, Yoga, Pilates, ...)
 so retrieval returns whole, coherent FAQ sections rather than arbitrary character windows.
 
