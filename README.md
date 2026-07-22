@@ -36,13 +36,13 @@ sharing.
 
 | Component            | local                          | prod                                          |
 |-----------------------|---------------------------------|------------------------------------------------|
-| Chat / agents / router | OpenAI (`gpt-4o-mini`)         | AWS Bedrock (`anthropic.claude-3-5-sonnet-*`)  |
+| Chat / agents / router | OpenAI (`gpt-4o-mini`)         | OpenAI (`gpt-4o-mini`, override via `chatModelName`) |
 | Embeddings              | HuggingFace (MiniLM, local)    | OpenAI (`text-embedding-3-small`)              |
 | Vector store            | pgvector (helm, on kind)        | pgvector (helm, on k8s)                        |
 
-Prod chat needs no `OPENAI_API_KEY` for the model itself, but embeddings still call OpenAI —
-both `OPENAI_API_KEY` and AWS credentials (for Bedrock + S3 + optionally Secrets Manager) are
-required in prod.
+Chat/agents/router call OpenAI directly in both profiles — no Bedrock. `OPENAI_API_KEY` is
+required in prod for both chat and embeddings, plus AWS credentials for S3 and optionally
+Secrets Manager.
 
 ## Local development
 
@@ -133,6 +133,7 @@ expects `DB_HOST` to resolve to the pgvector chart's release name). For local (k
 helm install pgvector helm/pgvector -f helm/pgvector/values-prod.yaml
 helm install studio-chatbot helm -f helm/values-prod.yaml \
   --set secrets.dbPassword=... \
+  --set secrets.openaiApiKey=... \
   --set config.dbSecretName=/rds/... \
   --set config.awsRegion=us-east-1
 ```
@@ -142,10 +143,11 @@ Notes:
   the scale of a single FAQ document. Not the `~/projects/infra` RDS module; this app owns its
   own DB lifecycle in-cluster (see the pgvector-location tradeoff discussed with the user before
   building this).
-- In prod, the app pod needs IAM permissions for Bedrock (`bedrock:InvokeModel`), S3
-  (`s3:GetObject` on `senthil-studio-faq/faq.md`), and optionally Secrets Manager — attach via
-  IRSA (`serviceAccountName` + annotated `ServiceAccount`, cluster/account-specific, not
-  templated here) rather than static keys.
+- In prod, the app pod needs IAM permissions for S3 (`s3:GetObject` on
+  `senthil-studio-faq/faq.md`) and optionally Secrets Manager — attach via IRSA
+  (`serviceAccountName` + annotated `ServiceAccount`, cluster/account-specific, not templated
+  here) rather than static keys. Chat/embeddings auth is just `OPENAI_API_KEY`, no AWS
+  permissions needed for those.
 - `pgvector` runs the public `pgvector/pgvector:pg16` image directly (extension is prebuilt in),
   so it needs no image build/ECR mirror of its own, local or prod.
 - The app chart's `values-prod.yaml` has an `<ECR_REPO_URL>` placeholder and no real secrets —

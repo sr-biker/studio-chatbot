@@ -6,10 +6,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 PROFILE = os.environ.get("APP_PROFILE", "local")  # "local" or "prod"
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
-# local: OpenAI for both chat and embeddings (no AWS creds needed for a laptop/dev loop).
-# prod: Bedrock (Claude) for chat/agents, OpenAI for embeddings.
+# OpenAI direct for chat/agents in both profiles -- local defaults to gpt-4o-mini, prod
+# overrides CHAT_MODEL_NAME via values-prod.yaml. OpenAI direct also used for prod embeddings.
 CHAT_MODEL_NAME = os.environ.get("CHAT_MODEL_NAME", "gpt-4o-mini")
-BEDROCK_CHAT_MODEL_ID = os.environ.get("BEDROCK_CHAT_MODEL_ID", "anthropic.claude-3-5-sonnet-20241022-v2:0")
 EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 OPENAI_EMBEDDING_MODEL_NAME = "text-embedding-3-small"
 

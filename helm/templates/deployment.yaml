@@ -14,10 +14,10 @@ spec:
       labels:
         {{- include "studio-chatbot.selectorLabels" . | nindent 8 }}
     spec:
-      # In prod, AWS Bedrock/S3/Secrets Manager calls need real IAM permissions --
-      # attach via IRSA (service account annotated with an IAM role ARN) rather than
-      # static keys. Set serviceAccountName + the annotation on that ServiceAccount
-      # at deploy time; left unset here since it's account/cluster specific.
+      # In prod, S3/Secrets Manager calls need real IAM permissions -- attach via IRSA
+      # (service account annotated with an IAM role ARN) rather than static keys. Set
+      # serviceAccountName + the annotation on that ServiceAccount at deploy time; left
+      # unset here since it's account/cluster specific.
       {{- if .Values.serviceAccountName }}
       serviceAccountName: {{ .Values.serviceAccountName }}
       {{- end }}

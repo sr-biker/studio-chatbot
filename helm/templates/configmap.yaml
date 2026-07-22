@@ -21,6 +21,3 @@ data:
   {{- if .Values.config.dbSecretName }}
   DB_SECRET_NAME: {{ .Values.config.dbSecretName | quote }}
   {{- end }}
-  {{- if .Values.config.bedrockChatModelId }}
-  BEDROCK_CHAT_MODEL_ID: {{ .Values.config.bedrockChatModelId | quote }}
-  {{- end }}

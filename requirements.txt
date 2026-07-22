@@ -4,7 +4,6 @@ pydantic>=2.9
 langchain-core>=0.3
 langchain-text-splitters>=0.3
 langchain-openai>=0.2
-langchain-aws>=0.2
 langchain-postgres>=0.0.12
 langchain-huggingface>=0.1
 sentence-transformers>=3.0

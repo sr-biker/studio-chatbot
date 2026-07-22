@@ -14,8 +14,11 @@ config:
   dbUser: studio
   faqS3Bucket: senthil-studio-faq
   faqS3Key: faq.md
-  # prod also needs DB_SECRET_NAME + AWS_REGION + BEDROCK_CHAT_MODEL_ID -- set via
-  # --set at deploy time (not checked in) since they're environment/account specific.
+  # Chat model is OpenAI direct, same as local -- override to a stronger model for prod here
+  # if desired (e.g. gpt-4o); OPENAI_API_KEY (secrets.openaiApiKey) is required either way.
+  chatModelName: gpt-4o-mini
+  # prod also needs DB_SECRET_NAME + AWS_REGION -- set via --set at deploy time (not checked
+  # in) since they're environment/account specific.
 
 resources:
   requests:
