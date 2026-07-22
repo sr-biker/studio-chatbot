@@ -1,0 +1,46 @@
+{{- if .Values.ingestJob.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  # Suffixed with the Helm revision so each `--set ingestJob.enabled=true` upgrade
+  # creates a fresh Job instead of erroring on an immutable field of the last one.
+  name: {{ include "studio-chatbot.name" . }}-ingest-faq-{{ .Release.Revision }}
+  labels:
+    {{- include "studio-chatbot.labels" . | nindent 4 }}
+spec:
+  backoffLimit: 2
+  template:
+    metadata:
+      labels:
+        {{- include "studio-chatbot.selectorLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      {{- if .Values.serviceAccountName }}
+      serviceAccountName: {{ .Values.serviceAccountName }}
+      {{- end }}
+      containers:
+        - name: ingest-faq
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python", "scripts/ingest_faq.py"]
+          envFrom:
+            - configMapRef:
+                name: {{ include "studio-chatbot.name" . }}-config
+            - secretRef:
+                name: {{ include "studio-chatbot.name" . }}-secrets
+          {{- if .Values.secrets.googleServiceAccountKey }}
+          volumeMounts:
+            - name: google-credentials
+              mountPath: /var/secrets/google
+              readOnly: true
+          {{- end }}
+      {{- if .Values.secrets.googleServiceAccountKey }}
+      volumes:
+        - name: google-credentials
+          secret:
+            secretName: {{ include "studio-chatbot.name" . }}-secrets
+            items:
+              - key: credentials.json
+                path: credentials.json
+      {{- end }}
+{{- end }}

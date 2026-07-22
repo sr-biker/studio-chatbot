@@ -10,6 +10,9 @@ subsequent calls so summarize has a transcript to work with.
 
 ## Architecture
 
+See [docs/WORKFLOWS.md](docs/WORKFLOWS.md) for detailed flowcharts of each code path
+(startup/FAQ ingestion, `POST /chat`, `GET /internal/faq/search`).
+
 ```
 POST /chat --> Router (keyword short-circuit, then LLM classifier)
                  |
@@ -223,15 +226,19 @@ Two different kinds of upgrade, two different risk profiles:
   1. Stand up a second pgvector release on the new major version, empty
      (`helm install pgvector-v2 helm/pgvector -f helm/pgvector/values.yaml --set image.tag=pgNN ...`),
      under its own release name/Service so it doesn't collide with the running one.
-  2. Repoint the app at it (`config.dbHost` in `helm/values.yaml`, `helm upgrade
-     studio-chatbot ...`) and let the rolling restart happen — each app pod, on startup,
-     calls `load_faq_knowledge()` and re-ingests the FAQ from S3/`data/faq.md` fresh into
-     `pgvector-v2`. No data ever needs to move between the two Postgres pods.
-  3. In prod (`replicaCount: 2`), a standard rolling update keeps one pod serving the old
+  2. Run the offline ingest Job against `pgvector-v2` (`helm upgrade studio-chatbot ...
+     --set ingestJob.enabled=true --set config.dbHost=pgvector-v2`) to populate it fresh
+     from the Google Doc/`data/faq.md` source — ingestion is a separate offline concern
+     from the app pod now (see `docs/WORKFLOWS.md` workflow 1b), not something app startup
+     does on its own.
+  3. Repoint the app at it (`config.dbHost` in `helm/values.yaml`, `helm upgrade
+     studio-chatbot ...`) and let the rolling restart happen. No data ever needs to move
+     between the two Postgres pods.
+  4. In prod (`replicaCount: 2`), a standard rolling update keeps one pod serving the old
      DB while the other cuts over — genuinely zero-downtime, briefly split-brained between
      old/new DB, which is harmless since both sides are just re-derivable embeddings. Local
      (`replicaCount: 1`) still has a small gap during its own restart.
-  4. Tear down the old `pgvector` release once the new one's confirmed healthy.
+  5. Tear down the old `pgvector` release once the new one's confirmed healthy.
 
   This shortcut depends on the pgvector Postgres staying a pure, re-derivable cache with
   nothing non-reconstructible in it. That's a deliberate boundary, not an accident: session
@@ -345,14 +352,44 @@ Two different kinds of upgrade, two different risk profiles:
   user -- scope it tightly (only the `impersonation` permission, only fires after a fresh OTP
   verification, short-lived tokens), and log every exchange (ties into the moderation-style
   logging already on `/chat`) rather than running it as a broad admin credential.
-- **On-demand FAQ re-ingestion + pgvector index maintenance (Maintainability).** Today, picking
-  up an edited FAQ requires a full pod restart (`lifespan()` re-runs `load_faq_knowledge()` on
-  startup) — there's no way to trigger it on demand. Add an internal endpoint (e.g.
-  `POST /internal/faq/reindex`, alongside `/internal/faq/search`, same auth boundary once
-  Keycloak JWT auth lands above) that calls `load_faq_knowledge()` directly. Also worth
-  scripting periodic `VACUUM ANALYZE` on `langchain_pg_embedding` after a re-ingest (the
-  delete-then-add pattern in `app/faq_loader.py` churns rows), and checking whether the
-  `langchain-postgres` version in use creates an IVFFlat vs HNSW index for this collection --
-  IVFFlat degrades more under churn and would benefit from an occasional `REINDEX` more than
-  HNSW would. Low priority at this FAQ's current size (single small document), worth revisiting
-  if the FAQ corpus grows enough for chunk count or update frequency to matter.
+- **FAQ re-ingestion is now an offline Job, not app startup (Maintainability) — mostly done,
+  a few gaps remain.** `app.main`'s `lifespan()` only calls `check_faq_freshness()` (a
+  read-only content-hash check that logs a warning if pgvector is stale, never re-embeds);
+  the actual embedding work lives in `scripts/ingest_faq.py`, run via
+  `helm/templates/ingest-job.yaml` (`ingestJob.enabled`, off by default) — see
+  `docs/WORKFLOWS.md` workflows 1 and 1b. This keeps embedding compute (and the Drive-read
+  dependency) out of the request-serving pod entirely. Still open: (1) the Job is triggered
+  manually today — a `CronJob` on a schedule, or a webhook off a Drive change notification,
+  would close the loop so a stale-content warning doesn't require a human to notice it in
+  logs and run the Job by hand; (2) periodic `VACUUM ANALYZE` on `langchain_pg_embedding`
+  after a re-ingest (the delete-then-add pattern in `app/faq_loader.py` churns rows); (3)
+  checking whether the `langchain-postgres` version in use creates an IVFFlat vs HNSW index
+  for this collection — IVFFlat degrades more under churn and would benefit from an
+  occasional `REINDEX` more than HNSW would. Low priority at this FAQ's current size (single
+  small document), worth revisiting if the FAQ corpus grows enough for chunk count or update
+  frequency to matter.
+- **Delete-then-add consistency gap during re-ingestion (low priority).** `load_faq_knowledge()`'s
+  `_delete_stale(SOURCE_ID)` commits immediately, then `add_documents()` runs moments later as
+  a separate call — while the ingest Job is running, a `/chat` or `/internal/faq/search`
+  request against that source can briefly see zero results, not stale-but-present ones. Two
+  ways to close it, from cheapest to most robust: (1) reorder to add-new-then-delete-old
+  instead of delete-then-add, accepting brief duplicate hits over brief empty ones; (2) reuse
+  the same **blue-green pgvector pattern already used for version upgrades** (see
+  "Evolvability" above) for FAQ *content* changes too — stand up a fresh pgvector release,
+  point the offline ingest Job at it instead of the live one, then cut the app over via
+  `config.dbHost` once it's fully populated, so the running pgvector the app is actually
+  querying is never touched mid-ingest at all. Given this FAQ's current size, the window is
+  likely sub-second either way — not worth building until the corpus or ingestion frequency
+  grows enough for it to matter.
+- **Goal-oriented agent for membership registration.** Every named agent today is reactive:
+  one message in, one tool-loop, one reply out (see `docs/WORKFLOWS.md` workflow 2) — there's
+  no notion of a multi-step goal the agent is actively working toward across turns. Real
+  registration (the OTP + Keycloak token exchange bullet above) is inherently multi-step —
+  verify identity, pick a plan, confirm, pay, complete — which a single reactive prompt/tool
+  loop handles poorly (nothing tracks "what step is this session on" or retries a stalled
+  step). Once session history is in the transactional store (see above), `MEMBERSHIP_REGISTRATION`
+  is the natural first candidate for a goal-oriented redesign: an explicit state machine (or a
+  planning loop) that knows the registration goal, tracks progress per `session_id`, and only
+  calls `register_for_membership(...)` once every precondition (OTP-verified, plan selected,
+  payment confirmed) is actually met -- rather than relying on the model to remember and
+  sequence all of that correctly inside one `Assistant.chat()` tool-calling loop.

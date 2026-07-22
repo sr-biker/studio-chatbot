@@ -1,9 +1,10 @@
 """Loads the studio's FAQ markdown and ingests it into the pgvector store for RAG.
 
-Source is profile-gated: prod reads the live object from S3 (s3://<FAQ_S3_BUCKET>/<FAQ_S3_KEY>),
-which is the single source of truth; local reads data/faq.md instead (avoids requiring AWS
-creds for a laptop dev loop), gitignored rather than checked in so there's no second copy that
-can drift from S3 -- pull/place your own copy there before running locally.
+Source is profile-gated: prod exports the live Google Doc (product team edits it directly,
+no deploy step to publish a change), which is the single source of truth; local reads
+data/faq.md instead (avoids requiring Google credentials for a laptop dev loop), gitignored
+rather than checked in so there's no second copy that can drift from the Doc -- pull/place
+your own copy there before running locally.
 Chunked by markdown header (## sections — one per topic: General Membership, Yoga, Pilates, ...)
 so retrieval returns whole, coherent FAQ sections rather than arbitrary character windows.
 
@@ -24,7 +25,7 @@ from app.db import pool
 
 log = logging.getLogger(__name__)
 
-SOURCE_ID = f"s3://{settings.faq_s3_bucket}/{settings.faq_s3_key}"
+SOURCE_ID = f"google-drive://{settings.faq_google_doc_id}"
 
 HEADERS_TO_SPLIT_ON = [("#", "h1"), ("##", "h2")]
 
@@ -33,15 +34,20 @@ def _load_markdown_text() -> str:
     """Reads the raw FAQ markdown from the profile-appropriate source.
 
     Returns:
-        The FAQ document's full text: fetched from S3 in prod, read from
+        The FAQ document's full text: exported from Google Drive in prod, read from
         settings.faq_local_path in local.
     """
     if settings.app_profile == "prod":
-        import boto3
+        from googleapiclient.discovery import build
 
-        client = boto3.client("s3", region_name=settings.aws_region)
-        obj = client.get_object(Bucket=settings.faq_s3_bucket, Key=settings.faq_s3_key)
-        return obj["Body"].read().decode("utf-8")
+        # Credentials come from GOOGLE_APPLICATION_CREDENTIALS (a service-account key
+        # file mounted from a k8s Secret) via google-auth's application-default flow --
+        # build() picks this up with no explicit credentials object needed.
+        # get_media (not export) -- the FAQ is an uploaded .md file, not a native Google
+        # Doc, so there's no Workspace format to export from.
+        drive = build("drive", "v3")
+        content = drive.files().get_media(fileId=settings.faq_google_doc_id).execute()
+        return content.decode("utf-8") if isinstance(content, bytes) else content
     return settings.faq_local_path.read_text(encoding="utf-8")
 
 
@@ -88,13 +94,43 @@ def _delete_stale(source: str) -> None:
         conn.commit()
 
 
+def check_faq_freshness() -> None:
+    """Best-effort startup check: warns if the FAQ source has drifted from pgvector.
+
+    Fetches the current source text and hashes it, but never re-ingests -- ingestion
+    is an offline concern now (see scripts/ingest_faq.py, run as a Kubernetes Job/
+    CronJob), not something the request-serving app does on its own startup. This
+    just gives operators a signal in the logs that a re-ingest is due.
+
+    Swallows any failure (Drive unreachable, bad credentials, DB hiccup) rather than
+    raising -- this pod's ability to serve /chat must not depend on Google Drive being
+    reachable at startup; a broken freshness check should degrade to "no signal", not
+    crash-loop the pod.
+    """
+    try:
+        text = _load_markdown_text()
+        content_hash = _content_hash(text)
+
+        if _already_ingested(content_hash):
+            log.info("FAQ knowledge is in sync (content_hash=%s).", content_hash[:12])
+        else:
+            log.warning(
+                "FAQ source has changed but pgvector is stale (content_hash=%s) -- "
+                "run the offline FAQ ingestion job to re-embed.",
+                content_hash[:12],
+            )
+    except Exception:
+        log.exception("FAQ freshness check failed; continuing startup without it.")
+
+
 def load_faq_knowledge() -> None:
     """Loads, chunks, and (re-)ingests the FAQ document into the pgvector store.
 
     No-op if the current FAQ content's hash already matches what's stored. If the
     content changed, deletes the old chunks for SOURCE_ID and re-ingests fresh ones,
-    split by markdown header so each chunk is one coherent FAQ section. Called once at
-    app startup (app.main's lifespan).
+    split by markdown header so each chunk is one coherent FAQ section. Run offline
+    (see scripts/ingest_faq.py), not from the app's own startup -- see
+    check_faq_freshness() for what the app does instead.
     """
     text = _load_markdown_text()
     content_hash = _content_hash(text)

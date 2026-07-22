@@ -33,9 +33,10 @@ class Settings(BaseSettings):
     db_secret_name: str | None = None
     aws_region: str = "us-east-1"
 
-    # FAQ source: local profile reads a checked-in copy; prod pulls the live object from S3.
-    faq_s3_bucket: str = "senthil-studio-faq"
-    faq_s3_key: str = "faq.md"
+    # FAQ source: local profile reads a checked-in copy; prod exports the live Google Doc
+    # Auth is via GOOGLE_APPLICATION_CREDENTIALS (a service-account key file mounted from
+    # a k8s Secret), picked up automatically by google-auth's application-default flow.
+    faq_google_doc_id: str = ""
 
     @property
     def vector_dimension(self) -> int:

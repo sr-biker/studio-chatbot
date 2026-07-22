@@ -33,9 +33,15 @@ spec:
           ports:
             - name: http
               containerPort: 8080
-          # Startup runs migrations + FAQ ingestion (S3 fetch + embedding), which can
-          # take longer than a typical readiness window on first boot -- generous
-          # startupProbe budget so it isn't killed mid-ingestion.
+          {{- if .Values.secrets.googleServiceAccountKey }}
+          volumeMounts:
+            - name: google-credentials
+              mountPath: /var/secrets/google
+              readOnly: true
+          {{- end }}
+          # Startup only checks FAQ freshness (a warning log, not a re-embed -- see
+          # app.faq_loader.check_faq_freshness) plus building the shared chat model,
+          # so this budget is mostly headroom, not a hard requirement.
           startupProbe:
             httpGet:
               path: /docs
@@ -54,3 +60,12 @@ spec:
             periodSeconds: 15
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+      {{- if .Values.secrets.googleServiceAccountKey }}
+      volumes:
+        - name: google-credentials
+          secret:
+            secretName: {{ include "studio-chatbot.name" . }}-secrets
+            items:
+              - key: credentials.json
+                path: credentials.json
+      {{- end }}

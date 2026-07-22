@@ -10,8 +10,12 @@ data:
   DB_PORT: {{ .Values.config.dbPort | quote }}
   DB_NAME: {{ .Values.config.dbName | quote }}
   DB_USER: {{ .Values.config.dbUser | quote }}
-  FAQ_S3_BUCKET: {{ .Values.config.faqS3Bucket | quote }}
-  FAQ_S3_KEY: {{ .Values.config.faqS3Key | quote }}
+  {{- if .Values.config.faqGoogleDocId }}
+  FAQ_GOOGLE_DOC_ID: {{ .Values.config.faqGoogleDocId | quote }}
+  {{- end }}
+  {{- if .Values.secrets.googleServiceAccountKey }}
+  GOOGLE_APPLICATION_CREDENTIALS: /var/secrets/google/credentials.json
+  {{- end }}
   {{- if .Values.config.chatModelName }}
   CHAT_MODEL_NAME: {{ .Values.config.chatModelName | quote }}
   {{- end }}

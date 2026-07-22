@@ -12,8 +12,8 @@ config:
   dbPort: "5432"
   dbName: studio
   dbUser: studio
-  faqS3Bucket: senthil-studio-faq
-  faqS3Key: faq.md
+  # The FAQ Google Doc's file ID (from its share URL: /file/d/<ID>/view).
+  faqGoogleDocId: "1Z3E0TVsPsNY5_GDD-MYtp2tFpV87Ybu9"
   # Chat model is OpenAI direct, same as local -- override to a stronger model for prod here
   # if desired (e.g. gpt-4o); OPENAI_API_KEY (secrets.openaiApiKey) is required either way.
   chatModelName: gpt-4o-mini

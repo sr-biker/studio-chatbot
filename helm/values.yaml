@@ -13,8 +13,7 @@ config:
   dbPort: "5432"
   dbName: studio
   dbUser: studio
-  faqS3Bucket: senthil-studio-faq
-  faqS3Key: faq.md
+  faqGoogleDocId: ""
   chatModelName: gpt-4o-mini
   summarizeModelName: gpt-5-nano
 
@@ -23,9 +22,19 @@ config:
 secrets:
   openaiApiKey: ""
   dbPassword: studio
+  # Prod only -- a Google service-account key JSON, mounted as a file and pointed to by
+  # GOOGLE_APPLICATION_CREDENTIALS. Local doesn't need this (reads data/faq.md directly).
+  googleServiceAccountKey: ""
 
 service:
   port: 8080
+
+# Offline FAQ (re-)ingestion. Off by default -- run on demand via:
+#   helm upgrade studio-chatbot helm -f helm/values.yaml --set ingestJob.enabled=true
+# not on every install/upgrade, and not from the app pod itself (see app/faq_loader.py's
+# check_faq_freshness vs load_faq_knowledge split).
+ingestJob:
+  enabled: false
 
 resources:
   requests:
