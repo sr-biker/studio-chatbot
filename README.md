@@ -111,7 +111,7 @@ curl -s 'http://localhost:8089/internal/faq/search?q=refund+policy'
 
 ```bash
 pip install -r requirements.txt
-pytest tests -q          # hermetic, no API key / DB needed
+pytest tests -q          # mocked, no API key / DB needed
 ```
 
 ## Runtime safety
@@ -233,10 +233,12 @@ Two different kinds of upgrade, two different risk profiles:
      (`replicaCount: 1`) still has a small gap during its own restart.
   4. Tear down the old `pgvector` release once the new one's confirmed healthy.
 
-  This shortcut stops applying the moment there's data in Postgres that *isn't*
-  re-derivable from an external source of truth — which is exactly what the "Session state
-  in Postgres" Next Step below would introduce (chat history has no S3-equivalent to replay
-  from), so revisit this section once that lands.
+  This shortcut depends on the pgvector Postgres staying a pure, re-derivable cache with
+  nothing non-reconstructible in it. That's a deliberate boundary, not an accident: session
+  state (and later, membership/registration data) is meant to live in a separate
+  transactional store behind its own API, not in this Postgres — see "Session state in a
+  separate transactional store" in Next Steps below. As long as that boundary holds, this
+  blue-green upgrade path stays valid indefinitely.
 
 ## Known divergences / simplifications
 
@@ -248,11 +250,15 @@ Two different kinds of upgrade, two different risk profiles:
 
 ## Next steps
 
-- **Session state in Postgres, not in-memory.** `app/session_store.py` is per-process and lost
-  on pod restart/across replicas — fine for a single pod, not for `values-prod.yaml`'s
-  `replicaCount: 2` without session affinity. Move it to a `sessions`/`session_messages` table
-  in the existing pgvector Postgres (or a separate store if load ever warrants it) so any pod
-  can serve any `session_id` and history survives restarts and deploys.
+- **Session state in a separate transactional store, not in-memory.** `app/session_store.py`
+  is per-process and lost on pod restart/across replicas — fine for a single pod, not for
+  `values-prod.yaml`'s `replicaCount: 2` without session affinity. Deliberately **not** the
+  pgvector Postgres — that store stays a pure, re-derivable FAQ cache (see "Evolvability"
+  above), which is what makes its zero-downtime blue-green upgrade path possible. Session
+  (and, later, membership/registration) state should live behind its own API-backed
+  transactional store, so this app calls it over an API rather than holding a direct
+  connection to someone else's database -- keeps the two lifecycles (vector cache vs. real
+  state) independently upgradable/ownable.
 - **Real booking/registration API calls.** Per "Known divergences" above, membership/support
   are advisory-only today. Wiring `MEMBERSHIP_REGISTRATION`'s agent to an actual booking API
   (as a tool, same shape as `search_studio_faq`) would move it from "explains the process" to
@@ -267,13 +273,13 @@ Two different kinds of upgrade, two different risk profiles:
   - and probably a dedicated route/flag rather than overloading the same `/chat` + keyword-router
     path both humans and agents hit — an agent calling in doesn't need the keyword short-circuit
     or classifier, it can specify the target agent directly.
-- **Session affinity or a shared store, whichever comes first.** Until Postgres-backed sessions
-  land, `sessionAffinity: ClientIP` on the Service is a cheap stopgap so `SUMMARIZE`/"resolved"
-  reliably hits the pod holding that session's history in prod.
+- **Session affinity or a shared store, whichever comes first.** Until the transactional
+  session store above lands, `sessionAffinity: ClientIP` on the Service is a cheap stopgap so
+  `SUMMARIZE`/"resolved" reliably hits the pod holding that session's history in prod.
 - **Multi-turn tool loop history.** `Assistant.chat()` only sees the current message plus its
-  own tool-call loop, not prior turns — once sessions are Postgres-backed, feeding stored
-  history into the agent's own messages (not just the summarize agent) would let
-  membership/support/general hold a real multi-turn conversation instead of treating each
+  own tool-call loop, not prior turns — once sessions live in the transactional store above,
+  feeding stored history into the agent's own messages (not just the summarize agent) would
+  let membership/support/general hold a real multi-turn conversation instead of treating each
   message independently.
 - **SAST/DAST in the pipeline.** Nothing currently scans the code, deps, or built image:
   - SAST: [Bandit](https://github.com/PyCQA/bandit) (`bandit -r app/`) and/or

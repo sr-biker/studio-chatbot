@@ -1,4 +1,4 @@
-"""Hermetic unit test for app.moderation — mocks the OpenAI client directly (no API key,
+"""Mocked unit test for app.moderation — mocks the OpenAI client directly (no API key,
 no network call)."""
 
 from unittest.mock import MagicMock, patch

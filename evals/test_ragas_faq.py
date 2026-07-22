@@ -2,7 +2,7 @@
 RAG path (the retrieval + generation loop backing the SUPPORT / MEMBERSHIP_REGISTRATION
 agents). Not part of the default `pytest` run -- gated behind the RUN_RAGAS_EVALS env var
 (and requires a live DB + OPENAI_API_KEY) so CI runs it as an explicit, separate job rather
-than on every hermetic test invocation.
+than on every mocked test invocation.
 
 Run:
     RUN_RAGAS_EVALS=1 OPENAI_API_KEY=... pytest evals/test_ragas_faq.py -q

@@ -1,4 +1,4 @@
-"""Hermetic unit test for Router — mocks the LangChain chat model directly (no API key,
+"""Mocked unit test for Router — mocks the LangChain chat model directly (no API key,
 no DB), asserting the keyword short-circuit never calls the model."""
 
 from unittest.mock import MagicMock
