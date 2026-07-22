@@ -7,14 +7,16 @@ Endpoints:
 """
 
 import logging
+from contextlib import asynccontextmanager
+from typing import TypedDict
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from pydantic import BaseModel
 
-from app import config
 from app.agents import GENERAL_SYSTEM_PROMPT, MEMBERSHIP_REGISTRATION_SYSTEM_PROMPT, SUPPORT_SYSTEM_PROMPT
 from app.ai_config import chat_model, router_chat_model
 from app.assistant import Assistant
+from app.config import settings
 from app.faq_loader import load_faq_knowledge
 from app.migrate import run_migrations
 from app.router import Route, Router
@@ -23,27 +25,30 @@ from app.tools.faq import TOOLS as FAQ_TOOLS, search_faq_raw
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
-app = FastAPI(title="studio-chatbot")
 
-_assistants: dict[Route, Assistant] = {}
-_router: Router | None = None
+class AppState(TypedDict):
+    assistants: dict[Route, Assistant]
+    router: Router
 
 
-@app.on_event("startup")
-def startup() -> None:
-    global _router
-
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     run_migrations()
     load_faq_knowledge()
 
     model = chat_model()
-    _assistants[Route.MEMBERSHIP_REGISTRATION] = Assistant(model, MEMBERSHIP_REGISTRATION_SYSTEM_PROMPT, FAQ_TOOLS)
-    _assistants[Route.SUPPORT] = Assistant(model, SUPPORT_SYSTEM_PROMPT, FAQ_TOOLS)
-    _assistants[Route.GENERAL] = Assistant(model, GENERAL_SYSTEM_PROMPT, FAQ_TOOLS)
+    assistants = {
+        Route.MEMBERSHIP_REGISTRATION: Assistant(model, MEMBERSHIP_REGISTRATION_SYSTEM_PROMPT, FAQ_TOOLS),
+        Route.SUPPORT: Assistant(model, SUPPORT_SYSTEM_PROMPT, FAQ_TOOLS),
+        Route.GENERAL: Assistant(model, GENERAL_SYSTEM_PROMPT, FAQ_TOOLS),
+    }
+    router = Router(router_chat_model())
 
-    _router = Router(router_chat_model())
+    log.info("studio-chatbot started (profile=%s)", settings.app_profile)
+    yield {"assistants": assistants, "router": router}
 
-    log.info("studio-chatbot started (profile=%s)", config.PROFILE)
+
+app = FastAPI(title="studio-chatbot", lifespan=lifespan)
 
 
 class ChatRequest(BaseModel):
@@ -56,9 +61,9 @@ class ChatResponse(BaseModel):
 
 
 @app.post("/chat", response_model=ChatResponse)
-def chat(request: ChatRequest) -> ChatResponse:
-    route = _router.route(request.message)
-    reply = _assistants[route].chat(request.message)
+def chat(chat_request: ChatRequest, request: Request) -> ChatResponse:
+    route = request.state.router.route(chat_request.message)
+    reply = request.state.assistants[route].chat(chat_request.message)
     return ChatResponse(agent=route.value.lower(), reply=reply)
 
 

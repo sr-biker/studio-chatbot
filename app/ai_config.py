@@ -1,46 +1,46 @@
 """LangChain model/store construction.
 
 Chat model is OpenAI direct for both profiles (local = gpt-4o-mini, prod = whatever
-config.CHAT_MODEL_NAME is set to via values-prod.yaml) -- no Bedrock. Embedding model is
+settings.chat_model_name is set to via values-prod.yaml). Embedding model is
 profile-gated: local = in-process sentence-transformers all-MiniLM-L6-v2 (384-dim), prod =
 OpenAI text-embedding-3-small (1536-dim). The two profiles never share a physical vector store
-— see config.VECTOR_DIMENSION."""
+— see settings.vector_dimension."""
 
 from functools import lru_cache
 
 from langchain_openai import ChatOpenAI
 from langchain_postgres import PGVector
 
-from app import config
+from app.config import settings
 
 
 @lru_cache
 def chat_model():
-    return ChatOpenAI(model=config.CHAT_MODEL_NAME, api_key=config.OPENAI_API_KEY)
+    return ChatOpenAI(model=settings.chat_model_name, api_key=settings.openai_api_key)
 
 
 @lru_cache
 def router_chat_model():
     """A separate, deterministic (temperature 0) model instance for Router's classifier."""
-    return ChatOpenAI(model=config.CHAT_MODEL_NAME, api_key=config.OPENAI_API_KEY, temperature=0.0)
+    return ChatOpenAI(model=settings.chat_model_name, api_key=settings.openai_api_key, temperature=0.0)
 
 
 @lru_cache
 def embedding_model():
-    if config.PROFILE == "prod":
+    if settings.app_profile == "prod":
         from langchain_openai import OpenAIEmbeddings
 
-        return OpenAIEmbeddings(model=config.OPENAI_EMBEDDING_MODEL_NAME, api_key=config.OPENAI_API_KEY)
+        return OpenAIEmbeddings(model=settings.openai_embedding_model_name, api_key=settings.openai_api_key)
     from langchain_huggingface import HuggingFaceEmbeddings
 
-    return HuggingFaceEmbeddings(model_name=config.EMBEDDING_MODEL_NAME)
+    return HuggingFaceEmbeddings(model_name=settings.embedding_model_name)
 
 
 @lru_cache
 def vector_store() -> PGVector:
-    _username, _password = config.resolve_db_credentials()
+    _username, _password = settings.resolve_db_credentials()
     connection = (
-        f"postgresql+psycopg://{_username}:{_password}@{config.DB_HOST}:{config.DB_PORT}/{config.DB_NAME}"
+        f"postgresql+psycopg://{_username}:{_password}@{settings.db_host}:{settings.db_port}/{settings.db_name}"
     )
     return PGVector(
         embeddings=embedding_model(),

@@ -40,9 +40,8 @@ sharing.
 | Embeddings              | HuggingFace (MiniLM, local)    | OpenAI (`text-embedding-3-small`)              |
 | Vector store            | pgvector (helm, on kind)        | pgvector (helm, on k8s)                        |
 
-Chat/agents/router call OpenAI directly in both profiles — no Bedrock. `OPENAI_API_KEY` is
-required in prod for both chat and embeddings, plus AWS credentials for S3 and optionally
-Secrets Manager.
+Chat/agents/router call OpenAI directly in both profiles. `OPENAI_API_KEY` is required in prod
+for both chat and embeddings, plus AWS credentials for S3 and optionally Secrets Manager.
 
 ## Local development
 
@@ -85,8 +84,7 @@ extension installed):
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   # fill in OPENAI_API_KEY
-export $(cat .env | xargs)
+echo "OPENAI_API_KEY=sk-..." > .env   # Settings (app/config.py) loads .env automatically
 uvicorn app.main:app --reload --port 8080
 ```
 

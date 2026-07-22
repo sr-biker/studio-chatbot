@@ -1,6 +1,7 @@
 fastapi>=0.115
 uvicorn[standard]>=0.32
 pydantic>=2.9
+pydantic-settings>=2.5
 langchain-core>=0.3
 langchain-text-splitters>=0.3
 langchain-openai>=0.2

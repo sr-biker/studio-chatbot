@@ -6,11 +6,11 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
-from app import config
+from app.config import settings
 
-_username, _password = config.resolve_db_credentials()
+_username, _password = settings.resolve_db_credentials()
 _dsn = (
-    f"host={config.DB_HOST} port={config.DB_PORT} dbname={config.DB_NAME} "
+    f"host={settings.db_host} port={settings.db_port} dbname={settings.db_name} "
     f"user={_username} password={_password}"
 )
 

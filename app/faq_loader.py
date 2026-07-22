@@ -16,25 +16,25 @@ import logging
 from langchain_core.documents import Document
 from langchain_text_splitters import MarkdownHeaderTextSplitter
 
-from app import config
 from app.ai_config import vector_store
+from app.config import settings
 from app.db import pool
 
 log = logging.getLogger(__name__)
 
-SOURCE_ID = f"s3://{config.FAQ_S3_BUCKET}/{config.FAQ_S3_KEY}"
+SOURCE_ID = f"s3://{settings.faq_s3_bucket}/{settings.faq_s3_key}"
 
 HEADERS_TO_SPLIT_ON = [("#", "h1"), ("##", "h2")]
 
 
 def _load_markdown_text() -> str:
-    if config.PROFILE == "prod":
+    if settings.app_profile == "prod":
         import boto3
 
-        client = boto3.client("s3", region_name=config.AWS_REGION)
-        obj = client.get_object(Bucket=config.FAQ_S3_BUCKET, Key=config.FAQ_S3_KEY)
+        client = boto3.client("s3", region_name=settings.aws_region)
+        obj = client.get_object(Bucket=settings.faq_s3_bucket, Key=settings.faq_s3_key)
         return obj["Body"].read().decode("utf-8")
-    return config.FAQ_LOCAL_PATH.read_text(encoding="utf-8")
+    return settings.faq_local_path.read_text(encoding="utf-8")
 
 
 def _content_hash(text: str) -> str:
