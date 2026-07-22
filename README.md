@@ -121,6 +121,33 @@ before it reaches the router or any agent — a flagged message gets a `400` imm
 nothing is sent to `chat_model`/`summarize_model`. This is the one runtime guardrail in the
 request path; `evals/` below is offline quality measurement, not a safety filter.
 
+## Observability
+
+What exists today is minimal: `app/main.py`'s `chat()` logs one line per turn
+(`session_id`, `route`, `message`, `reply`) via Python's standard `logging` module to
+stdout — `logging.basicConfig(level=logging.INFO)`, no structured/JSON formatting, no log
+aggregation configured, no metrics, no tracing. In kind/k8s that means `kubectl logs`, not a
+dashboard.
+
+Gaps, in rough priority order:
+- **No metrics.** Nothing tracks request volume, latency, route distribution (how often
+  each of the four agents fires), moderation-flag rate, or per-provider (OpenAI) error
+  rate/cost. A Prometheus counter/histogram per route + a `/metrics` endpoint (e.g.
+  `prometheus-fastapi-instrumentator`) would be the cheapest way to close this.
+- **No tracing.** A single `/chat` call can involve router classification, one or more
+  tool-calling round-trips, and a vector search — right now there's no way to see that as
+  one trace, only inferred from the single log line's timing. OpenTelemetry
+  auto-instrumentation for FastAPI + LangChain would give this without much custom code.
+- **No structured logs.** The current `log.info(...)` is a formatted string, not JSON — fine
+  for `kubectl logs | grep`, harder to query/alert on once there's an actual log pipeline
+  (CloudWatch Logs, etc). Worth switching to structured logging (e.g. `structlog`) before
+  volume makes grep-based debugging painful.
+- **No alerting.** Nothing pages on elevated error rates, moderation-flag spikes, or OpenAI
+  API failures — those currently only surface if someone happens to be reading logs.
+
+None of this is wired into CI/CD yet — it'd sit alongside the SAST/DAST pipeline work in
+"Next steps" below, not replace it.
+
 ## Evals (RAGAS + openai/evals-style, offline/CI-gated)
 
 `evals/` holds **offline quality measurement**, not a runtime guardrail (see "Runtime safety"
@@ -168,6 +195,48 @@ Notes:
   so it needs no image build/ECR mirror of its own, local or prod.
 - The app chart's `values-prod.yaml` has an `<ECR_REPO_URL>` placeholder and no real secrets —
   fill in at deploy time from wherever this org keeps prod credentials, never check them in.
+
+## Evolvability
+
+### Upgrading pgvector
+
+Two different kinds of upgrade, two different risk profiles:
+
+- **Same Postgres major version, newer `vector` extension** (e.g. a new pgvector release
+  within the same `pgvector/pgvector:pg16` image family) — in-place, no data loss. Bump
+  `image.tag` in `helm/pgvector/values.yaml` (or `values-prod.yaml`), `helm upgrade`, then
+  from inside the pod:
+  ```sql
+  \dx                              -- shows currently installed extension version
+  ALTER EXTENSION vector UPDATE;   -- upgrades to whatever's bundled in the new image
+  ```
+  This only upgrades to whatever version is compiled into the image already running — it
+  doesn't fetch a newer extension from anywhere on its own.
+
+- **Postgres major version bump** (e.g. `pg16` → `pg17`) — not in-place. Postgres data
+  directories aren't compatible across major versions; swapping the image tag against the
+  existing `PersistentVolumeClaim` just gets a pod stuck in `CrashLoopBackOff` on `initdb`
+  version mismatch, not silent data loss, but real downtime until fixed. Normally this needs
+  a `pg_dump`/restore maintenance window — but **this app's pgvector store is a derived
+  cache of the FAQ document, not primary data** (see `app/faq_loader.py`'s content-hash
+  idempotency), so a zero-downtime path exists that a general Postgres upgrade wouldn't have:
+  1. Stand up a second pgvector release on the new major version, empty
+     (`helm install pgvector-v2 helm/pgvector -f helm/pgvector/values.yaml --set image.tag=pgNN ...`),
+     under its own release name/Service so it doesn't collide with the running one.
+  2. Repoint the app at it (`config.dbHost` in `helm/values.yaml`, `helm upgrade
+     studio-chatbot ...`) and let the rolling restart happen — each app pod, on startup,
+     calls `load_faq_knowledge()` and re-ingests the FAQ from S3/`data/faq.md` fresh into
+     `pgvector-v2`. No data ever needs to move between the two Postgres pods.
+  3. In prod (`replicaCount: 2`), a standard rolling update keeps one pod serving the old
+     DB while the other cuts over — genuinely zero-downtime, briefly split-brained between
+     old/new DB, which is harmless since both sides are just re-derivable embeddings. Local
+     (`replicaCount: 1`) still has a small gap during its own restart.
+  4. Tear down the old `pgvector` release once the new one's confirmed healthy.
+
+  This shortcut stops applying the moment there's data in Postgres that *isn't*
+  re-derivable from an external source of truth — which is exactly what the "Session state
+  in Postgres" Next Step below would introduce (chat history has no S3-equivalent to replay
+  from), so revisit this section once that lands.
 
 ## Known divergences / simplifications
 
