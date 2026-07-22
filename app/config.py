@@ -40,18 +40,37 @@ class Settings(BaseSettings):
 
     @property
     def vector_dimension(self) -> int:
-        # Each env re-embeds its own store with its own model — a PGVector column is
-        # fixed-dimension, so local (MiniLM, 384) and prod (OpenAI text-embedding-3-small,
-        # 1536) can never share one physical store. "Similar embedding models" means same
-        # family/quality tier, not identical vectors or a shared table.
+        """Embedding vector width for the active profile's PGVector column.
+
+        Each env re-embeds its own store with its own model — a PGVector column is
+        fixed-dimension, so local (MiniLM, 384) and prod (OpenAI text-embedding-3-small,
+        1536) can never share one physical store. "Similar embedding models" means same
+        family/quality tier, not identical vectors or a shared table.
+
+        Returns:
+            384 when app_profile is "local", 1536 otherwise (prod).
+        """
         return 384 if self.app_profile == "local" else 1536
 
     @property
     def faq_local_path(self) -> Path:
+        """Filesystem path to the local-profile FAQ markdown copy (data/faq.md).
+
+        Returns:
+            Absolute Path to data/faq.md under the project root.
+        """
         return DATA_DIR / "faq.md"
 
     def resolve_db_credentials(self) -> tuple[str, str]:
-        """Returns (username, password). In prod, pulled from AWS Secrets Manager."""
+        """Resolves DB credentials for the active profile.
+
+        In prod with db_secret_name set, credentials are pulled live from AWS Secrets
+        Manager (JSON secret with "username"/"password" keys); otherwise falls back to
+        the static db_user/db_password settings fields (used for local dev).
+
+        Returns:
+            A (username, password) tuple.
+        """
         if self.app_profile == "prod" and self.db_secret_name:
             import boto3
 
@@ -63,6 +82,11 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
+    """Builds (and memoizes) the process-wide Settings instance.
+
+    Returns:
+        A cached Settings, loaded from environment variables and .env on first call.
+    """
     return Settings()
 
 

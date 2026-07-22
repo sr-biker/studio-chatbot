@@ -16,23 +16,51 @@ from app.config import settings
 
 @lru_cache
 def chat_model():
+    """Builds (and memoizes) the primary chat model used by the named agents.
+
+    Returns:
+        A ChatOpenAI instance configured from settings.chat_model_name /
+        settings.openai_api_key, shared by all Assistant instances in main.py's lifespan.
+    """
     return ChatOpenAI(model=settings.chat_model_name, api_key=settings.openai_api_key)
 
 
 @lru_cache
 def router_chat_model():
-    """A separate, deterministic (temperature 0) model instance for Router's classifier."""
+    """Builds (and memoizes) the model used by Router's LLM classifier.
+
+    A separate, deterministic (temperature 0) model instance from chat_model() so the
+    router's route selection doesn't inherit chat_model's generation temperature.
+
+    Returns:
+        A ChatOpenAI instance with temperature=0.0.
+    """
     return ChatOpenAI(model=settings.chat_model_name, api_key=settings.openai_api_key, temperature=0.0)
 
 
 @lru_cache
 def summarize_model():
-    """Cheap/fast tier for the summarize agent -- see settings.summarize_model_name."""
+    """Builds (and memoizes) the model used by the SUMMARIZE agent.
+
+    Cheap/fast tier, distinct from chat_model() -- see settings.summarize_model_name.
+
+    Returns:
+        A ChatOpenAI instance configured from settings.summarize_model_name.
+    """
     return ChatOpenAI(model=settings.summarize_model_name, api_key=settings.openai_api_key)
 
 
 @lru_cache
 def embedding_model():
+    """Builds (and memoizes) the embedding model for the active profile.
+
+    Profile-gated: local uses an in-process HuggingFace sentence-transformers model (no
+    API key needed); prod uses OpenAI embeddings. See settings.vector_dimension -- the two
+    profiles' embeddings are never dimension-compatible, so this must stay profile-gated.
+
+    Returns:
+        An OpenAIEmbeddings instance in prod, a HuggingFaceEmbeddings instance in local.
+    """
     if settings.app_profile == "prod":
         from langchain_openai import OpenAIEmbeddings
 
@@ -44,6 +72,12 @@ def embedding_model():
 
 @lru_cache
 def vector_store() -> PGVector:
+    """Builds (and memoizes) the PGVector store backing the FAQ collection.
+
+    Returns:
+        A PGVector instance bound to the "faq_store" collection, using embedding_model()
+        and a connection string built from settings/resolve_db_credentials().
+    """
     _username, _password = settings.resolve_db_credentials()
     connection = (
         f"postgresql+psycopg://{_username}:{_password}@{settings.db_host}:{settings.db_port}/{settings.db_name}"

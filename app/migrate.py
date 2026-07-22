@@ -11,6 +11,14 @@ log = logging.getLogger(__name__)
 
 
 def run_migrations() -> None:
+    """Applies any unapplied db_migrations/*.sql files, in filename order.
+
+    Creates schema_migrations if it doesn't exist, skips any filename already recorded
+    there, and substitutes "{vector_dimension}" in each SQL file with
+    settings.vector_dimension before executing it. Called once at app startup
+    (app.main's lifespan) -- not idempotent-safe to call concurrently from multiple
+    pods without a migration lock, but fine for this app's single-writer startup path.
+    """
     with pool.connection() as conn:
         conn.execute(
             "CREATE TABLE IF NOT EXISTS schema_migrations (filename text PRIMARY KEY, applied_at timestamptz DEFAULT now())"

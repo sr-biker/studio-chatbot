@@ -45,6 +45,18 @@ class AppState(TypedDict):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """FastAPI lifespan: runs startup work once, then shares built state via request.state.
+
+    Runs DB migrations and FAQ ingestion, builds the shared chat model and one Assistant
+    per Route, and constructs the Router and SessionStore -- all yielded as a dict so
+    each field is reachable as request.state.<key> in endpoint handlers.
+
+    Args:
+        app: The FastAPI app instance (required by the lifespan protocol, unused here).
+
+    Yields:
+        An AppState dict: {"assistants": ..., "router": ..., "sessions": ...}.
+    """
     run_migrations()
     load_faq_knowledge()
 
@@ -79,6 +91,18 @@ class ChatResponse(BaseModel):
 
 @app.post("/chat", response_model=ChatResponse)
 def chat(chat_request: ChatRequest, request: Request) -> ChatResponse:
+    """Routes a chat message to a named agent and returns its reply.
+
+    Args:
+        chat_request: The request body -- message text plus an optional session_id to
+            continue an existing conversation (a new one is generated if omitted).
+        request: The FastAPI request, used to reach the shared router/assistants/sessions
+            built once in lifespan() (request.state).
+
+    Returns:
+        A ChatResponse with which agent handled it, its reply, and the session_id to
+        pass back on the next call in this conversation.
+    """
     session_id = chat_request.session_id or str(uuid.uuid4())
     sessions = request.state.sessions
     route = request.state.router.route(chat_request.message)
@@ -103,4 +127,14 @@ class FaqSnippet(BaseModel):
 
 @app.get("/faq/search", response_model=list[FaqSnippet])
 def faq_search(q: str, topK: int | None = None) -> list[FaqSnippet]:
+    """Runs a raw FAQ similarity search, bypassing the LLM/router entirely.
+
+    Args:
+        q: The search query string.
+        topK: Requested number of results; see app.tools.faq.search_faq_raw for
+            default/clamping behavior.
+
+    Returns:
+        Matched FAQ snippets ordered by similarity.
+    """
     return search_faq_raw(q, topK)

@@ -11,7 +11,20 @@ MAX_TOP_K = 10
 
 
 def search_faq_raw(query: str, top_k: Optional[int] = None) -> list[dict]:
-    """Shared implementation used by both the LangChain tool and GET /faq/search."""
+    """Runs a similarity search against the FAQ vector store.
+
+    Shared implementation used by both the LangChain tool (search_studio_faq) and
+    GET /faq/search, so both paths return the same hit shape.
+
+    Args:
+        query: The search text.
+        top_k: Requested number of hits; clamped to MAX_TOP_K, defaults to
+            DEFAULT_TOP_K if None, zero, or negative.
+
+    Returns:
+        A list of dicts, each with "section", "source", and "text" keys, one per
+        matched chunk, ordered by similarity.
+    """
     k = min(top_k, MAX_TOP_K) if (top_k and top_k > 0) else DEFAULT_TOP_K
     hits = vector_store().similarity_search(query, k=k)
     return [

@@ -19,6 +19,12 @@ pool = ConnectionPool(conninfo=_dsn, open=True)
 
 @contextmanager
 def get_cursor():
+    """Yields a dict-row psycopg cursor from the shared connection pool.
+
+    Returns:
+        A context manager yielding a psycopg cursor (rows as dicts); the underlying
+        connection is returned to the pool on exit.
+    """
     with pool.connection() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             yield cur

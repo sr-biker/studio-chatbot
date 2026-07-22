@@ -198,3 +198,28 @@ Notes:
   history into the agent's own messages (not just the summarize agent) would let
   membership/support/general hold a real multi-turn conversation instead of treating each
   message independently.
+- **SAST/DAST in the pipeline.** Nothing currently scans the code, deps, or built image:
+  - SAST: [Bandit](https://github.com/PyCQA/bandit) (`bandit -r app/`) and/or
+    [Semgrep](https://semgrep.dev/) (`semgrep --config p/python .`) against `app/`;
+    [pip-audit](https://github.com/pypa/pip-audit) against `requirements.txt` for known CVEs in
+    dependencies (e.g. `langchain`/`fastapi` versions with disclosed vulns).
+  - Image scanning for what lands in ECR: [Trivy](https://github.com/aquasecurity/trivy)
+    (`trivy image --exit-code 1 --severity HIGH,CRITICAL <image>`) as a CodeBuild gate before
+    push, plus turning on ECR enhanced scanning (Inspector-backed) as an always-on backstop
+    after push. [Hadolint](https://github.com/hadolint/hadolint) for Dockerfile best-practice
+    lint (root user, unpinned base image, etc).
+  - DAST: [OWASP ZAP](https://www.zaproxy.org/) baseline scan against a running deploy (kind
+    locally or staging) — FastAPI's auto-generated `/openapi.json` lets ZAP target the two real
+    endpoints (`/chat`, `/faq/search`) instead of a blind crawl.
+  - Wire the SAST/dependency/image steps into CodeBuild before the `docker build`/push stage
+    (fail fast); run ZAP post-deploy against staging, never directly against prod.
+- **Multi-provider abstraction.** `app/ai_config.py` constructs `ChatOpenAI`/`OpenAIEmbeddings`
+  directly, so swapping or adding a provider (Anthropic, Bedrock, etc — evaluated once already
+  for prod chat, reverted for now, since Bedrock's `bedrock-runtime` vs `bedrock-mantle` split
+  and per-model API-shape differences added more complexity than it was worth mid-refactor)
+  means editing model-construction code, not config. If multi-provider ever becomes a real
+  requirement (cost fallback, provider outage failover, per-tenant model choice) rather than a
+  one-off swap, worth introducing a thin factory keyed off `settings` (provider name + model
+  name + any provider-specific kwargs) so `chat_model()`/`embedding_model()` stay call sites,
+  not the place provider-specific branching lives. Not worth building speculatively before
+  there's a second provider actually in play.

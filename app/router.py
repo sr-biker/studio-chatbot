@@ -45,9 +45,27 @@ _SUMMARIZE_KW = re.compile(r"\b(summarize|summarise|tl;?dr|tldr|shorten|sum up|r
 
 class Router:
     def __init__(self, router_chat_model):
+        """Builds a Router bound to the model used for its fallback classifier.
+
+        Args:
+            router_chat_model: A LangChain chat model invoked only when the cheap
+                keyword short-circuit doesn't match (see app.ai_config.router_chat_model).
+        """
         self._router_chat_model = router_chat_model
 
     def route(self, message: str | None) -> Route:
+        """Classifies a message into exactly one Route.
+
+        Two-stage: a cheap regex short-circuit first (no model call), then a
+        temperature-0 LLM classifier for anything ambiguous.
+
+        Args:
+            message: The incoming user message; None or blank routes to GENERAL
+                without invoking the model.
+
+        Returns:
+            The matched Route.
+        """
         m = (message or "").strip()
         if not m:
             return Route.GENERAL
@@ -61,6 +79,15 @@ class Router:
 
     @staticmethod
     def _keyword_route(m: str) -> Route | None:
+        """Cheap regex short-circuit, checked before falling back to the LLM classifier.
+
+        Args:
+            m: The already-stripped, non-empty message.
+
+        Returns:
+            A Route if a high-precision keyword pattern matched, else None (meaning
+            "fall through to the classifier").
+        """
         if _MEMBERSHIP_KW.search(m):
             return Route.MEMBERSHIP_REGISTRATION
         if _SUMMARIZE_KW.search(m):
@@ -68,6 +95,14 @@ class Router:
         return None
 
     def _classify(self, message: str) -> Route:
+        """Invokes the LLM classifier for a message the keyword pass didn't resolve.
+
+        Args:
+            message: The message to classify.
+
+        Returns:
+            The Route parsed from the model's single-word label response.
+        """
         response = self._router_chat_model.invoke(
             [SystemMessage(content=CLASSIFIER_PROMPT), HumanMessage(content=message)]
         )
@@ -75,6 +110,15 @@ class Router:
 
     @staticmethod
     def _parse(label: str | None) -> Route:
+        """Parses the classifier's raw text output into a Route.
+
+        Args:
+            label: The model's raw response content, expected to be one of the Route
+                names but possibly with stray punctuation/casing.
+
+        Returns:
+            The matched Route, or GENERAL if label is empty or doesn't match any Route.
+        """
         if not label:
             return Route.GENERAL
         normalized = re.sub(r"[^A-Za-z_]", "", label).upper()

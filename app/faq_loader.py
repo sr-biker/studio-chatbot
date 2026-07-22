@@ -30,6 +30,12 @@ HEADERS_TO_SPLIT_ON = [("#", "h1"), ("##", "h2")]
 
 
 def _load_markdown_text() -> str:
+    """Reads the raw FAQ markdown from the profile-appropriate source.
+
+    Returns:
+        The FAQ document's full text: fetched from S3 in prod, read from
+        settings.faq_local_path in local.
+    """
     if settings.app_profile == "prod":
         import boto3
 
@@ -40,10 +46,26 @@ def _load_markdown_text() -> str:
 
 
 def _content_hash(text: str) -> str:
+    """Hashes FAQ text for the idempotency check.
+
+    Args:
+        text: The full FAQ document text.
+
+    Returns:
+        A hex SHA-256 digest of the UTF-8 encoded text.
+    """
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def _already_ingested(content_hash: str) -> bool:
+    """Checks whether chunks for this exact FAQ content hash already exist.
+
+    Args:
+        content_hash: The hash returned by _content_hash() for the current FAQ text.
+
+    Returns:
+        True if at least one existing embedding row carries this content_hash.
+    """
     with pool.connection() as conn:
         row = conn.execute(
             "SELECT count(*) FROM langchain_pg_embedding WHERE cmetadata->>'content_hash' = %s",
@@ -53,6 +75,11 @@ def _already_ingested(content_hash: str) -> bool:
 
 
 def _delete_stale(source: str) -> None:
+    """Deletes all embedding rows for a given source before re-ingesting changed content.
+
+    Args:
+        source: The SOURCE_ID identifying which document's chunks to delete.
+    """
     with pool.connection() as conn:
         conn.execute(
             "DELETE FROM langchain_pg_embedding WHERE cmetadata->>'source' = %s",
@@ -62,6 +89,13 @@ def _delete_stale(source: str) -> None:
 
 
 def load_faq_knowledge() -> None:
+    """Loads, chunks, and (re-)ingests the FAQ document into the pgvector store.
+
+    No-op if the current FAQ content's hash already matches what's stored. If the
+    content changed, deletes the old chunks for SOURCE_ID and re-ingests fresh ones,
+    split by markdown header so each chunk is one coherent FAQ section. Called once at
+    app startup (app.main's lifespan).
+    """
     text = _load_markdown_text()
     content_hash = _content_hash(text)
 
