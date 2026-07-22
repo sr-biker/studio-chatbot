@@ -114,10 +114,17 @@ pip install -r requirements.txt
 pytest tests -q          # hermetic, no API key / DB needed
 ```
 
+## Runtime safety
+
+`app/moderation.py` checks every incoming `/chat` message against OpenAI's Moderation API
+before it reaches the router or any agent — a flagged message gets a `400` immediately,
+nothing is sent to `chat_model`/`summarize_model`. This is the one runtime guardrail in the
+request path; `evals/` below is offline quality measurement, not a safety filter.
+
 ## Evals (RAGAS + openai/evals-style, offline/CI-gated)
 
-`evals/` holds **offline quality measurement**, not runtime guardrails — these are CI-gated
-regression checks against `data/faq.md`, not an input/output safety filter in the request path.
+`evals/` holds **offline quality measurement**, not a runtime guardrail (see "Runtime safety"
+above) — these are CI-gated regression checks against `data/faq.md`.
 
 - `evals/test_ragas_faq.py` — RAGAS faithfulness / answer-relevancy / context-precision over
   the FAQ RAG loop.
@@ -168,7 +175,7 @@ Notes:
   transactional booking system — matches the FAQ's own guidance ("register via the member
   portal, mobile app, or front desk"); this bot explains policy and process, it doesn't call a
   booking API (there isn't one in scope here).
-- Evals are offline/CI-gated only, not runtime guardrails — see "Evals" above.
+- Evals are offline/CI-gated only, not runtime guardrails — see "Runtime safety" / "Evals" above.
 
 ## Next steps
 
@@ -180,7 +187,8 @@ Notes:
 - **Real booking/registration API calls.** Per "Known divergences" above, membership/support
   are advisory-only today. Wiring `MEMBERSHIP_REGISTRATION`'s agent to an actual booking API
   (as a tool, same shape as `search_studio_faq`) would move it from "explains the process" to
-  "completes the transaction."
+  "completes the transaction" -- see the OTP + Keycloak token exchange bullet below for the
+  identity piece this needs.
 - **Agentic invocation of this API.** Right now every caller is a human via `/chat`. As other
   internal services or agents start calling studio-chatbot programmatically (e.g. an
   orchestrator agent treating this service as one of its own tools), that likely means:
@@ -237,9 +245,28 @@ Notes:
   `Assistant.chat()`'s tool-calling loop as a whole — that loop already has its own bounded
   iteration count (`MAX_TOOL_ITERATIONS`) for a different reason (walking a multi-step tool-use
   conversation to completion, not retrying a failed call) and shouldn't be conflated with retry.
-- **Keycloak-based JWT authentication.** `POST /chat` and `GET /internal/faq/search` (renamed
-  from `/faq/search` -- the prefix marks it as not meant for public traffic, but nothing
-  currently enforces that) are both unauthenticated. Add a FastAPI dependency that validates a
-  bearer JWT issued by this org's existing Keycloak (see `~/mystudio/authapi` for the Keycloak
-  setup already in use elsewhere) against its JWKS endpoint, and require it on both routes --
-  `/internal/*` at minimum, `/chat` too if end users should be identified rather than anonymous.
+- **Keycloak-based JWT authentication.** `POST /chat` and `GET /internal/faq/search` are both
+  unauthenticated today. Add a FastAPI dependency that validates a bearer JWT against this
+  org's existing Keycloak (see `~/mystudio/authapi`) JWKS endpoint, required on `/internal/*`
+  at minimum, `/chat` too if end users should be identified rather than anonymous.
+- **Real membership registration via OTP + Keycloak token exchange.** For
+  `MEMBERSHIP_REGISTRATION` to actually complete a transaction (not just explain the process --
+  see "Known divergences"), it needs to know *who* is registering. Chat has no login step, so
+  full interactive Keycloak auth doesn't fit; the flow instead:
+  1. A `send_otp(contact)` tool sends a one-time code to the email or phone the user provides
+     (SES/SNS, or Twilio for SMS).
+  2. A `verify_otp(contact, code)` tool checks it and marks the session (`SessionStore`, or its
+     Postgres-backed successor -- see above) as verified for that contact. This only proves
+     "controls this email/phone," not a full identity -- fine for *new* registration, weaker
+     for looking up an existing member's account.
+  3. On success, studio-chatbot's backend service account performs a **Keycloak Token Exchange**
+     (RFC 8693 -- not the admin-console "Impersonation" feature, which is cookie/browser-based
+     and not meant for backend calls) using the `impersonation` fine-grained permission, to
+     obtain a real access token for that user (looked up/created by contact in Keycloak).
+  4. `register_for_membership(...)` sends that token downstream, so the booking API sees a
+     normal authenticated member request rather than a chatbot-specific bypass.
+
+  Security note: the service account doing the token exchange can impersonate *any* realm
+  user -- scope it tightly (only the `impersonation` permission, only fires after a fresh OTP
+  verification, short-lived tokens), and log every exchange (ties into the moderation-style
+  logging already on `/chat`) rather than running it as a broad admin credential.

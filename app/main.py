@@ -1,9 +1,12 @@
 """FastAPI app.
 
 Endpoints:
-  POST /chat        -> {"reply": "...", "session_id": "..."} — routed to a named agent
-                        (membership_registration, support, general, or summarize) via
-                        app.router.Router. Pass back the returned session_id on subsequent
+  POST /chat        -> {"reply": "...", "session_id": "..."} — the incoming message is
+                        checked against OpenAI's Moderation API first (app.moderation);
+                        flagged messages get a 400 without reaching any agent. Otherwise
+                        routed to a named agent (membership_registration, support, general,
+                        or summarize) via app.router.Router. Pass back the returned
+                        session_id on subsequent
                         calls to keep them in the same conversation (needed so SUMMARIZE has
                         history to summarize -- e.g. saying "resolved" summarizes the session
                         so far, not the literal word "resolved"). Every turn is logged
@@ -20,7 +23,7 @@ import uuid
 from contextlib import asynccontextmanager
 from typing import TypedDict
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 
 from app.agents import (
@@ -33,6 +36,7 @@ from app.ai_config import chat_model, router_chat_model, summarize_model
 from app.assistant import Assistant
 from app.config import settings
 from app.faq_loader import load_faq_knowledge
+from app.moderation import is_flagged
 from app.router import Route, Router
 from app.session_store import SessionStore
 from app.tools.faq import TOOLS as FAQ_TOOLS, search_faq_raw
@@ -105,7 +109,14 @@ def chat(chat_request: ChatRequest, request: Request) -> ChatResponse:
     Returns:
         A ChatResponse with which agent handled it, its reply, and the session_id to
         pass back on the next call in this conversation.
+
+    Raises:
+        HTTPException: 400 if the message is flagged by OpenAI's Moderation API.
     """
+    if is_flagged(chat_request.message):
+        log.warning("chat message flagged by moderation, session=%s", chat_request.session_id)
+        raise HTTPException(status_code=400, detail="Message flagged by moderation.")
+
     session_id = chat_request.session_id or str(uuid.uuid4())
     sessions = request.state.sessions
     route = request.state.router.route(chat_request.message)

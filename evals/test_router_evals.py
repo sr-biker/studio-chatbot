@@ -55,10 +55,8 @@ def test_reply_is_grounded_in_faq(case):
     from app.ai_config import chat_model
     from app.assistant import Assistant
     from app.faq_loader import load_faq_knowledge
-    from app.migrate import run_migrations
     from app.tools.faq import TOOLS as FAQ_TOOLS
 
-    run_migrations()
     load_faq_knowledge()
 
     assistant = Assistant(chat_model(), SUPPORT_SYSTEM_PROMPT, FAQ_TOOLS)
