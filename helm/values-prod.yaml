@@ -19,6 +19,11 @@ config:
   chatModelName: gpt-4o-mini
   # Cheap/fast tier for the summarize agent -- gpt-5-nano is OpenAI's Haiku-equivalent tier.
   summarizeModelName: gpt-5-nano
+  # LangSmith tracing -- also needs secrets.langchainApiKey set (not checked in, via --set
+  # at deploy time). Traces real prod /chat requests -- see README's "Observability" section
+  # for the redaction/sampling question before enabling this against real user traffic.
+  langchainTracing: false
+  langchainProject: studio-chatbot-prod
   # prod also needs DB_SECRET_NAME + AWS_REGION -- set via --set at deploy time (not checked
   # in) since they're environment/account specific.
 

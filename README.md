@@ -174,10 +174,15 @@ Gaps, in rough priority order:
   each of the four agents fires), moderation-flag rate, or per-provider (OpenAI) error
   rate/cost. A Prometheus counter/histogram per route + a `/metrics` endpoint (e.g.
   `prometheus-fastapi-instrumentator`) would be the cheapest way to close this.
-- **No tracing.** A single `/chat` call can involve router classification, one or more
-  tool-calling round-trips, and a vector search — right now there's no way to see that as
-  one trace, only inferred from the single log line's timing. OpenTelemetry
-  auto-instrumentation for FastAPI + LangChain would give this without much custom code.
+- ~~**No tracing.**~~ **Done via LangSmith.** Set `config.langchainTracing: true` +
+  `secrets.langchainApiKey` (Helm) — since every LLM/tool call already runs through
+  LangChain runnables, tracing needs no code changes, just `LANGCHAIN_TRACING_V2`,
+  `LANGCHAIN_API_KEY`, `LANGCHAIN_PROJECT` env vars. A single `/chat` call's router
+  classification, tool-calling round-trips, and vector search all show up as one linked
+  trace in the LangSmith UI. Off by default in both `values.yaml` and `values-prod.yaml` —
+  before enabling in prod, decide on trace sampling and whether user message content needs
+  redaction before being sent to a third-party SaaS (real user text, not just metadata,
+  flows through these traces).
 - **No structured logs.** The current `log.info(...)` is a formatted string, not JSON — fine
   for `kubectl logs | grep`, harder to query/alert on once there's an actual log pipeline
   (CloudWatch Logs, etc). Worth switching to structured logging (e.g. `structlog`) before
@@ -294,6 +299,25 @@ Two different kinds of upgrade, two different risk profiles:
 
 ## Next steps
 
+- **Human handover.** No path today from a bot conversation to a live human agent — every
+  `/chat` call is routed to one of the four LLM agents, with no escalation route out.
+  Real chat platforms (a web widget backed by Intercom/Front/Zendesk-style inboxes, or
+  SMS/WhatsApp via Twilio) normalize multiple channels into one queue and support handing a
+  conversation from bot to human mid-session; this app has neither the trigger nor the
+  hand-off mechanics yet. Two pieces needed:
+  1. **An escalation trigger.** Either explicit (user says "talk to a person") or implicit
+     (moderation-flagged message, tool loop exhausted without resolving anything, a
+     business-rule trip like a refund dispute). Natural fit as a fifth `Route` (e.g.
+     `Route.HANDOFF`) in `app/router.py`, alongside the existing keyword-short-circuit /
+     LLM-classifier pattern already used for `SUMMARIZE`.
+  2. **The hand-off itself.** Once triggered, push the session's transcript (already
+     available via `SessionStore.transcript()`, the same mechanism `SUMMARIZE` uses) to
+     wherever human agents work, via that platform's API — a human needs the full
+     conversation, not just the triggering message. The session then needs to be marked
+     human-owned so subsequent `/chat` calls for that `session_id` stop routing to an LLM
+     agent and instead passthrough (or queue) until a human closes it out or hands it back.
+     This human-owned flag is exactly the kind of state that belongs in the transactional
+     session store below, not `SessionStore`'s in-memory dict.
 - **Session state in a separate transactional store, not in-memory.** `app/session_store.py`
   is per-process and lost on pod restart/across replicas — fine for a single pod, not for
   `values-prod.yaml`'s `replicaCount: 2` without session affinity. Deliberately **not** the

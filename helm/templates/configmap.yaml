@@ -28,3 +28,7 @@ data:
   {{- if .Values.config.dbSecretName }}
   DB_SECRET_NAME: {{ .Values.config.dbSecretName | quote }}
   {{- end }}
+  {{- if .Values.config.langchainTracing }}
+  LANGCHAIN_TRACING_V2: "true"
+  LANGCHAIN_PROJECT: {{ .Values.config.langchainProject | quote }}
+  {{- end }}

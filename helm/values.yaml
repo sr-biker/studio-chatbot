@@ -16,6 +16,10 @@ config:
   faqGoogleDocId: ""
   chatModelName: gpt-4o-mini
   summarizeModelName: gpt-5-nano
+  # LangSmith tracing -- off by default (needs secrets.langchainApiKey too). LangChain
+  # auto-instruments every LLM/tool call once LANGCHAIN_TRACING_V2 is set, no code changes.
+  langchainTracing: false
+  langchainProject: studio-chatbot-local
 
 # Local/dev only -- populated straight into a Secret. Prod overrides these via
 # values-prod.yaml + --set-file/--set from a secret manager, never checked in real.
@@ -25,6 +29,8 @@ secrets:
   # Prod only -- a Google service-account key JSON, mounted as a file and pointed to by
   # GOOGLE_APPLICATION_CREDENTIALS. Local doesn't need this (reads data/faq.md directly).
   googleServiceAccountKey: ""
+  # Required if config.langchainTracing is true.
+  langchainApiKey: ""
 
 service:
   port: 8080
