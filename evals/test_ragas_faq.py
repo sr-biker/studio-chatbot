@@ -9,6 +9,7 @@ Run:
 """
 
 import os
+from functools import lru_cache
 
 import pytest
 
@@ -20,11 +21,12 @@ pytestmark = pytest.mark.skipif(
 # Minimum scores below which a regression should fail CI. Thresholds are loose (RAG over a
 # 35-item FAQ with a small local model is not going to hit 0.95+ reliably) -- the point is
 # catching a broken retrieval path or a badly regressed prompt, not chasing a leaderboard.
-MIN_FAITHFULNESS = 0.7
-MIN_ANSWER_RELEVANCY = 0.6
-MIN_CONTEXT_PRECISION = 0.5
+MIN_FAITHFULNESS = 0.8
+MIN_ANSWER_RELEVANCY = 0.8
+MIN_CONTEXT_PRECISION = 0.8
 
 
+@lru_cache
 def _build_ragas_dataset():
     from datasets import Dataset
 
