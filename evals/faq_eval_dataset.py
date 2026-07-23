@@ -28,4 +28,8 @@ FAQ_EVAL_CASES = [
         "question": "What happens if a class I want is full?",
         "ground_truth": "There is a waitlist; if a spot opens up you're automatically notified and enrolled if you confirm within the required timeframe.",
     },
+    {
+        "question": "How much does a membership cost per month with a 1-year commitment?",
+        "ground_truth": "$69 per month with a 1-year commitment ($79/month month-to-month, $59/month with a 2-year commitment).",
+    },
 ]
