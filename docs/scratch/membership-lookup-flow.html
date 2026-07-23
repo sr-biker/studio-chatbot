@@ -1,0 +1,217 @@
+<title>Membership Lookup — Sandboxed Identity Flow</title>
+<style>
+:root{
+  --bg:#f6f5f1;
+  --panel:#ffffff;
+  --ink:#1e2320;
+  --ink-soft:#5b625d;
+  --line:#d8d4ca;
+  --accent:#3d6f63;
+  --accent-soft:#e4ede9;
+  --warn:#a6642c;
+  --warn-soft:#f6ead9;
+  --mono-bg:#eeece4;
+}
+:root[data-theme="dark"]{
+  --bg:#181b19;
+  --panel:#20241f;
+  --ink:#eceee9;
+  --ink-soft:#9aa39c;
+  --line:#39413a;
+  --accent:#7fc4b0;
+  --accent-soft:#243a34;
+  --warn:#e0a361;
+  --warn-soft:#3a2e1c;
+  --mono-bg:#262a24;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#181b19; --panel:#20241f; --ink:#eceee9; --ink-soft:#9aa39c;
+    --line:#39413a; --accent:#7fc4b0; --accent-soft:#243a34;
+    --warn:#e0a361; --warn-soft:#3a2e1c; --mono-bg:#262a24;
+  }
+}
+*{box-sizing:border-box;}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  padding:3rem 1.5rem 5rem;
+}
+.wrap{max-width:920px;margin:0 auto;}
+.mono{font-family:"SF Mono",ui-monospace,"Cascadia Code",Menlo,monospace;}
+header{margin-bottom:2.75rem;}
+.eyebrow{
+  font-family:"SF Mono",ui-monospace,monospace;
+  font-size:.72rem; letter-spacing:.14em; text-transform:uppercase;
+  color:var(--accent); margin:0 0 .9rem;
+}
+h1{
+  font-size:clamp(1.9rem,4vw,2.55rem); line-height:1.12; margin:0 0 .6rem;
+  text-wrap:balance; font-weight:600; letter-spacing:-.01em;
+}
+.dek{
+  color:var(--ink-soft); font-size:1.05rem; line-height:1.55; max-width:62ch; margin:0;
+}
+
+.lanes{
+  display:grid; grid-template-columns:1fr 1fr; gap:1.5rem;
+  margin:2.5rem 0 1.75rem;
+}
+@media (max-width:720px){ .lanes{grid-template-columns:1fr;} }
+.lane{
+  border:1px solid var(--line); border-radius:4px; background:var(--panel);
+  padding:1.4rem 1.4rem 1.6rem;
+}
+.lane-label{
+  font-family:"SF Mono",ui-monospace,monospace; font-size:.68rem;
+  letter-spacing:.1em; text-transform:uppercase; color:var(--ink-soft);
+  display:flex; align-items:center; gap:.5rem; margin-bottom:1.1rem;
+}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--accent);flex:none;}
+.lane.b .dot{background:var(--warn);}
+
+.step{
+  position:relative; padding:.7rem 0 .7rem 1.4rem; font-size:.94rem; line-height:1.45;
+  border-left:2px solid var(--line);
+}
+.lane .step:last-child{padding-bottom:0;}
+.step::before{
+  content:""; position:absolute; left:-5px; top:1.05rem; width:8px; height:8px;
+  border-radius:50%; background:var(--panel); border:2px solid var(--accent);
+}
+.lane.b .step::before{border-color:var(--warn);}
+.step b{font-weight:600;}
+.step .note{display:block; color:var(--ink-soft); font-size:.85rem; margin-top:.2rem;}
+.step .code{
+  font-family:"SF Mono",ui-monospace,monospace; font-size:.8rem; background:var(--mono-bg);
+  padding:.1rem .4rem; border-radius:3px; color:var(--ink);
+}
+
+.branch{
+  margin-top:.4rem; padding-left:.9rem; border-left:1px dashed var(--line);
+  display:flex; flex-direction:column; gap:.35rem;
+}
+.branch .fork{font-size:.83rem; color:var(--ink-soft);}
+.branch .fork b{color:var(--ink);}
+
+.bridge{
+  display:flex; align-items:center; gap:.75rem; margin:0 0 1.75rem;
+  font-family:"SF Mono",ui-monospace,monospace; font-size:.78rem; color:var(--ink-soft);
+}
+.bridge::before,.bridge::after{content:"";flex:1;height:1px;background:var(--line);}
+
+.callout{
+  border:1px solid var(--warn); background:var(--warn-soft); border-radius:4px;
+  padding:1.2rem 1.4rem; display:flex; gap:.9rem; align-items:flex-start;
+  margin-bottom:1.5rem;
+}
+.callout svg{flex:none; margin-top:.15rem;}
+.callout p{margin:0; font-size:.92rem; line-height:1.55; color:var(--ink);}
+.callout p b{color:var(--warn);}
+
+.outcomes{
+  display:grid; grid-template-columns:repeat(3,1fr); gap:1px; background:var(--line);
+  border:1px solid var(--line); border-radius:4px; overflow:hidden; margin-bottom:2.5rem;
+}
+@media (max-width:640px){ .outcomes{grid-template-columns:1fr;} }
+.outcome{background:var(--panel); padding:1.1rem 1.2rem;}
+.outcome .tag{
+  font-family:"SF Mono",ui-monospace,monospace; font-size:.68rem; letter-spacing:.08em;
+  text-transform:uppercase; color:var(--ink-soft); margin-bottom:.5rem; display:block;
+}
+.outcome .msg{font-size:.88rem; line-height:1.45; font-style:italic; color:var(--ink);}
+
+footer{
+  border-top:1px solid var(--line); padding-top:1.2rem; margin-top:1rem;
+  font-size:.8rem; color:var(--ink-soft); display:flex; justify-content:space-between; flex-wrap:wrap; gap:.5rem;
+}
+</style>
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">studio-chatbot &middot; workflow 4</p>
+    <h1>One identifier in, one membership out — never a name</h1>
+    <p class="dek">How <span class="mono">lookup_membership_status</span> resolves a real record without letting a
+    session enumerate anyone else's. Two services, one caller-supplied identifier, no browsing.</p>
+  </header>
+
+  <div class="lanes">
+    <div class="lane a">
+      <div class="lane-label"><span class="dot"></span> studio-chatbot &middot; the tool call</div>
+      <div class="step">
+        <b>Assistant decides to call the tool</b>
+        <span class="note">Only reachable from the MEMBERSHIP_REGISTRATION route, mid tool-loop.</span>
+      </div>
+      <div class="step">
+        <b>Exactly one of <span class="code">email</span> / <span class="code">phone</span>?</b>
+        <div class="branch">
+          <span class="fork"><b>neither or both</b> → refuse, ask again</span>
+          <span class="fork"><b>exactly one</b> → proceed</span>
+        </div>
+      </div>
+      <div class="step">
+        <b>GET</b> <span class="code">membership:8082/api/memberships/lookup</span>
+        <span class="note">The only cross-service call this repo ever makes.</span>
+      </div>
+      <div class="step">
+        <b>Format the response</b>
+        <span class="note">One line per membership + schedule, or a plain-language miss/error — handed back to the model as a ToolMessage.</span>
+      </div>
+    </div>
+
+    <div class="lane b">
+      <div class="lane-label"><span class="dot"></span> membership service &middot; resolving the identifier</div>
+      <div class="step">
+        <b>Email given?</b>
+        <div class="branch">
+          <span class="fork"><b>yes</b> → that's the resolved email</span>
+          <span class="fork"><b>no, phone given</b> → ask ContactsClient</span>
+        </div>
+      </div>
+      <div class="step">
+        <b>ContactsClient</b> calls <span class="code">contacts:8081/api/contacts</span>
+        <span class="note">Fetches the full list, filters by phone client-side — that service has no phone-search endpoint of its own.</span>
+      </div>
+      <div class="step">
+        <b>Resolved email is null?</b>
+        <div class="branch">
+          <span class="fork"><b>yes</b> → 200, empty list</span>
+          <span class="fork"><b>no</b> → query memberships by email</span>
+        </div>
+      </div>
+      <div class="step">
+        <b><span class="code">findByEmailIgnoreCase</span></b>
+        <span class="note">Returns 200 with the matching membership(s), possibly still empty.</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="bridge">membership never queries contacts by name — only by the phone it was just handed</div>
+
+  <div class="callout">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--warn)" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.86 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.86a2 2 0 0 0-3.4 0Z"/></svg>
+    <p><b>Narrows the gap, doesn't close it.</b> Neither service checks that the caller <em>is</em> the email or
+    phone they typed — it only stops "search anyone by name." "Check on my friend John" still gets refused until
+    John's own identifier is supplied — see <span class="mono">app/agents/membership.py</span>'s system prompt.</p>
+  </div>
+
+  <div class="outcomes">
+    <div class="outcome">
+      <span class="tag">Malformed request</span>
+      <div class="msg">"Provide exactly one of email or phone, not both or neither."</div>
+    </div>
+    <div class="outcome">
+      <span class="tag">Unknown / no membership</span>
+      <div class="msg">"No membership found for &lt;identifier&gt;." — same response either way; the tool can't tell the two apart.</div>
+    </div>
+    <div class="outcome">
+      <span class="tag">Service unreachable</span>
+      <div class="msg">"Membership lookup is temporarily unavailable — please try again shortly."</div>
+    </div>
+  </div>
+
+  <footer>
+    <span>studio-chatbot / docs / WORKFLOWS.md §4</span>
+    <span>membership · contacts-micro-service</span>
+  </footer>
+</div>

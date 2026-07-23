@@ -1,0 +1,364 @@
+<title>studio-chatbot — Workflows</title>
+<style>
+:root{
+  --bg:#f6f5f1; --panel:#ffffff; --ink:#1e2320; --ink-soft:#5b625d;
+  --line:#d8d4ca; --accent:#3d6f63; --accent-soft:#e4ede9;
+  --warn:#a6642c; --warn-soft:#f6ead9; --mono-bg:#eeece4;
+}
+:root[data-theme="dark"]{
+  --bg:#181b19; --panel:#20241f; --ink:#eceee9; --ink-soft:#9aa39c;
+  --line:#39413a; --accent:#7fc4b0; --accent-soft:#243a34;
+  --warn:#e0a361; --warn-soft:#3a2e1c; --mono-bg:#262a24;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#181b19; --panel:#20241f; --ink:#eceee9; --ink-soft:#9aa39c;
+    --line:#39413a; --accent:#7fc4b0; --accent-soft:#243a34;
+    --warn:#e0a361; --warn-soft:#3a2e1c; --mono-bg:#262a24;
+  }
+}
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+}
+.mono{font-family:"SF Mono",ui-monospace,"Cascadia Code",Menlo,monospace;}
+
+nav{
+  position:sticky; top:0; z-index:10; background:var(--bg);
+  border-bottom:1px solid var(--line); backdrop-filter:blur(6px);
+}
+.nav-inner{
+  max-width:960px; margin:0 auto; padding:.9rem 1.5rem;
+  display:flex; gap:1.4rem; overflow-x:auto; font-family:"SF Mono",ui-monospace,monospace;
+  font-size:.74rem; letter-spacing:.04em;
+}
+nav a{color:var(--ink-soft); text-decoration:none; white-space:nowrap; padding:.2rem 0; border-bottom:2px solid transparent;}
+nav a:hover, nav a:focus-visible{color:var(--accent); border-color:var(--accent);}
+
+.wrap{max-width:920px;margin:0 auto; padding:0 1.5rem;}
+.intro{padding:3rem 0 1rem;}
+.intro .eyebrow{
+  font-family:"SF Mono",ui-monospace,monospace; font-size:.72rem; letter-spacing:.14em;
+  text-transform:uppercase; color:var(--accent); margin:0 0 .9rem;
+}
+.intro h1{font-size:clamp(2rem,4.4vw,2.7rem); line-height:1.1; margin:0 0 .7rem; text-wrap:balance; font-weight:600; letter-spacing:-.01em;}
+.intro p{color:var(--ink-soft); font-size:1.05rem; line-height:1.6; max-width:64ch; margin:0;}
+
+section.flow{padding:3.5rem 0; border-top:1px solid var(--line);}
+section.flow:first-of-type{border-top:none;}
+.flow-head{margin-bottom:2rem;}
+.flow-head .eyebrow{
+  font-family:"SF Mono",ui-monospace,monospace; font-size:.7rem; letter-spacing:.12em;
+  text-transform:uppercase; color:var(--accent); margin:0 0 .6rem;
+}
+.flow-head h2{font-size:clamp(1.5rem,3vw,1.9rem); line-height:1.2; margin:0 0 .55rem; text-wrap:balance; font-weight:600;}
+.flow-head p{color:var(--ink-soft); font-size:.98rem; line-height:1.55; max-width:62ch; margin:0;}
+
+/* linear pipeline */
+.pipeline{display:flex; flex-direction:column; gap:0;}
+.pstep{
+  display:grid; grid-template-columns:2.2rem 1fr; gap:1rem; padding:1rem 0; position:relative;
+}
+.pstep .num{
+  font-family:"SF Mono",ui-monospace,monospace; font-size:.78rem; color:var(--accent);
+  display:flex; align-items:flex-start; padding-top:.15rem;
+}
+.pstep .body b{font-weight:600;}
+.pstep .body .note{display:block; color:var(--ink-soft); font-size:.85rem; margin-top:.25rem;}
+.pstep .code{
+  font-family:"SF Mono",ui-monospace,monospace; font-size:.8rem; background:var(--mono-bg);
+  padding:.1rem .4rem; border-radius:3px; color:var(--ink);
+}
+.pstep:not(:last-child)::after{
+  content:""; position:absolute; left:1.05rem; top:2.3rem; bottom:-.1rem; width:1px; background:var(--line);
+}
+.pfork{
+  margin:.5rem 0 0 0; padding-left:1rem; border-left:1px dashed var(--line);
+  display:flex; flex-direction:column; gap:.4rem;
+}
+.pfork .f{font-size:.85rem; color:var(--ink-soft);}
+.pfork .f b{color:var(--ink);}
+.pfork .f.warn b{color:var(--warn);}
+.pfork .f.go b{color:var(--accent);}
+
+/* two-lane layout */
+.lanes{display:grid; grid-template-columns:1fr 1fr; gap:1.5rem; margin:0 0 1.75rem;}
+@media (max-width:720px){ .lanes{grid-template-columns:1fr;} }
+.lane{border:1px solid var(--line); border-radius:4px; background:var(--panel); padding:1.4rem 1.4rem 1.6rem;}
+.lane-label{
+  font-family:"SF Mono",ui-monospace,monospace; font-size:.68rem; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--ink-soft); display:flex; align-items:center; gap:.5rem; margin-bottom:1.1rem;
+}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--accent);flex:none;}
+.lane.b .dot{background:var(--warn);}
+.step{position:relative; padding:.7rem 0 .7rem 1.4rem; font-size:.94rem; line-height:1.45; border-left:2px solid var(--line);}
+.lane .step:last-child{padding-bottom:0;}
+.step::before{content:""; position:absolute; left:-5px; top:1.05rem; width:8px; height:8px; border-radius:50%; background:var(--panel); border:2px solid var(--accent);}
+.lane.b .step::before{border-color:var(--warn);}
+.step b{font-weight:600;}
+.step .note{display:block; color:var(--ink-soft); font-size:.85rem; margin-top:.2rem;}
+.branch{margin-top:.4rem; padding-left:.9rem; border-left:1px dashed var(--line); display:flex; flex-direction:column; gap:.35rem;}
+.branch .fork{font-size:.83rem; color:var(--ink-soft);}
+.branch .fork b{color:var(--ink);}
+
+.bridge{
+  display:flex; align-items:center; gap:.75rem; margin:0 0 1.75rem;
+  font-family:"SF Mono",ui-monospace,monospace; font-size:.78rem; color:var(--ink-soft);
+}
+.bridge::before,.bridge::after{content:"";flex:1;height:1px;background:var(--line);}
+
+.callout{
+  border:1px solid var(--warn); background:var(--warn-soft); border-radius:4px;
+  padding:1.2rem 1.4rem; display:flex; gap:.9rem; align-items:flex-start; margin:1.5rem 0;
+}
+.callout svg{flex:none; margin-top:.15rem;}
+.callout p{margin:0; font-size:.92rem; line-height:1.55; color:var(--ink);}
+.callout p b{color:var(--warn);}
+
+.info{
+  border:1px solid var(--line); background:var(--accent-soft); border-radius:4px;
+  padding:1.1rem 1.3rem; margin:1.5rem 0; font-size:.9rem; line-height:1.55;
+}
+.info b{color:var(--accent);}
+
+.outcomes{display:grid; grid-template-columns:repeat(3,1fr); gap:1px; background:var(--line); border:1px solid var(--line); border-radius:4px; overflow:hidden; margin:1.75rem 0 0;}
+@media (max-width:640px){ .outcomes{grid-template-columns:1fr;} }
+.outcome{background:var(--panel); padding:1.1rem 1.2rem;}
+.outcome .tag{font-family:"SF Mono",ui-monospace,monospace; font-size:.68rem; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-soft); margin-bottom:.5rem; display:block;}
+.outcome .msg{font-size:.88rem; line-height:1.45; font-style:italic; color:var(--ink);}
+
+.notes{list-style:none; margin:1.75rem 0 0; padding:0; display:flex; flex-direction:column; gap:.7rem;}
+.notes li{font-size:.87rem; line-height:1.55; color:var(--ink-soft); padding-left:1.1rem; position:relative;}
+.notes li::before{content:"—"; position:absolute; left:0; color:var(--line);}
+.notes b{color:var(--ink);}
+
+footer{border-top:1px solid var(--line); padding:2rem 0 3.5rem; margin-top:0; font-size:.8rem; color:var(--ink-soft); display:flex; justify-content:space-between; flex-wrap:wrap; gap:.5rem; max-width:920px; margin-left:auto; margin-right:auto; padding-left:1.5rem; padding-right:1.5rem;}
+</style>
+
+<nav><div class="nav-inner">
+  <a href="#f1">1 · Startup</a>
+  <a href="#f1b">1b · Ingestion</a>
+  <a href="#f2">2 · POST /chat</a>
+  <a href="#f3">3 · FAQ search</a>
+  <a href="#f4">4 · Membership lookup</a>
+</div></nav>
+
+<div class="wrap intro">
+  <p class="eyebrow">studio-chatbot &middot; docs/WORKFLOWS.md, visual companion</p>
+  <h1>What actually happens, five ways</h1>
+  <p>Every code path in the fitness-studio chatbot, from pod boot to a cross-service membership
+  lookup. Companion to the root README's architecture overview — this is the step-by-step.</p>
+</div>
+
+<section class="flow" id="f1">
+  <div class="wrap">
+    <div class="flow-head">
+      <p class="eyebrow">Workflow 1</p>
+      <h2>App startup</h2>
+      <p><span class="code mono">app.main.lifespan</span> — runs once per pod, before any request is served. A
+      read-only freshness check, not ingestion.</p>
+    </div>
+    <div class="pipeline">
+      <div class="pstep"><div class="num">01</div><div class="body"><b>Pod starts</b> → <span class="code">lifespan()</span> begins</div></div>
+      <div class="pstep"><div class="num">02</div><div class="body"><b>check_faq_freshness()</b>
+        <span class="note">Loads the FAQ markdown (Drive export in prod, <span class="code">data/faq.md</span> local) and hashes it.</span></div></div>
+      <div class="pstep"><div class="num">03</div><div class="body"><b>Hash already in pgvector?</b>
+        <div class="pfork">
+          <span class="f go"><b>yes</b> — log "in sync", nothing written</span>
+          <span class="f warn"><b>no</b> — log "stale, run the offline ingest job" (workflow 1b)</span>
+        </div></div></div>
+      <div class="pstep"><div class="num">04</div><div class="body"><b>Build the model + assistant set</b>
+        <span class="note">One shared <span class="code">ChatOpenAI</span>; one Assistant per Route — MEMBERSHIP_REGISTRATION, SUPPORT, GENERAL (chat model + FAQ tools), SUMMARIZE (summarize model, no tools).</span></div></div>
+      <div class="pstep"><div class="num">05</div><div class="body"><b>Router + SessionStore</b> constructed, attached to <span class="code">request.state</span></div></div>
+      <div class="pstep"><div class="num">06</div><div class="body"><b>Pod ready to serve traffic</b></div></div>
+    </div>
+    <div class="info"><b>Why read-only:</b> keeping embedding compute (and its Drive-read dependency) out of the
+    request-serving pod's startup critical path. <span class="mono">chat_model()</span>, <span class="mono">router_chat_model()</span>,
+    <span class="mono">summarize_model()</span>, <span class="mono">vector_store()</span>, <span class="mono">embedding_model()</span>
+    are all <span class="mono">@lru_cache</span>d in <span class="mono">app/ai_config.py</span> — built once, reused by every request.</div>
+  </div>
+</section>
+
+<section class="flow" id="f1b">
+  <div class="wrap">
+    <div class="flow-head">
+      <p class="eyebrow">Workflow 1b</p>
+      <h2>Offline FAQ ingestion</h2>
+      <p><span class="code mono">scripts/ingest_faq.py</span> — runs as a Kubernetes <span class="code">Job</span>
+      (off by default), not from the app pod.</p>
+    </div>
+    <div class="pipeline">
+      <div class="pstep"><div class="num">01</div><div class="body"><b>Job starts</b> → <span class="code">load_faq_knowledge()</span> → <span class="code">_load_markdown_text()</span></div></div>
+      <div class="pstep"><div class="num">02</div><div class="body"><b>FAQ content hash already ingested?</b>
+        <div class="pfork">
+          <span class="f go"><b>yes</b> — no-op, log and skip, job completes</span>
+          <span class="f warn"><b>no</b> — continue to re-ingest</span>
+        </div></div></div>
+      <div class="pstep"><div class="num">03</div><div class="body"><b>_delete_stale(SOURCE_ID)</b>
+        <span class="note">Deletes every old chunk for this source — idempotency is whole-document, not per-chunk.</span></div></div>
+      <div class="pstep"><div class="num">04</div><div class="body"><b>MarkdownHeaderTextSplitter</b>
+        <span class="note">Splits the FAQ by <span class="code">#</span> / <span class="code">##</span> headers.</span></div></div>
+      <div class="pstep"><div class="num">05</div><div class="body"><b>vector_store().add_documents(chunks)</b> → job completes</div></div>
+    </div>
+    <div class="callout">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--warn)" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.86 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.86a2 2 0 0 0-3.4 0Z"/></svg>
+      <p><b>Any FAQ edit re-ingests everything</b> for that source, not just the changed section — the hash is
+      whole-document. Triggered manually today (<span class="mono">helm upgrade ... --set ingestJob.enabled=true</span>);
+      a scheduled <span class="mono">CronJob</span> or a Drive-webhook trigger are the natural next steps.</p>
+    </div>
+  </div>
+</section>
+
+<section class="flow" id="f2">
+  <div class="wrap">
+    <div class="flow-head">
+      <p class="eyebrow">Workflow 2</p>
+      <h2>POST /chat</h2>
+      <p>The main request path — every step below runs synchronously per request.</p>
+    </div>
+    <div class="pipeline">
+      <div class="pstep"><div class="num">01</div><div class="body"><b>is_flagged(message)?</b> — OpenAI Moderation API
+        <div class="pfork">
+          <span class="f warn"><b>flagged</b> — log, raise <span class="code">HTTPException(400)</span>, stop here</span>
+          <span class="f go"><b>clear</b> — continue</span>
+        </div></div></div>
+      <div class="pstep"><div class="num">02</div><div class="body"><b>Resolve session_id</b> — from the request, or a fresh <span class="code">uuid4()</span></div></div>
+    </div>
+
+    <div class="lanes" style="margin-top:1.5rem;">
+      <div class="lane a">
+        <div class="lane-label"><span class="dot"></span> Router.route() — app/router.py</div>
+        <div class="step"><b>Message empty?</b>
+          <div class="branch"><span class="fork"><b>yes</b> → Route.GENERAL</span></div></div>
+        <div class="step"><b>Keyword short-circuit match?</b>
+          <div class="branch">
+            <span class="fork"><b>join / register / membership / waitlist / etc</b> → MEMBERSHIP_REGISTRATION</span>
+            <span class="fork"><b>summarize / tldr / resolved / etc</b> → SUMMARIZE</span>
+            <span class="fork"><b>no match</b> → LLM classifier, temperature 0</span>
+          </div></div>
+        <div class="step"><b>Parse the label</b>
+          <span class="note">→ MEMBERSHIP_REGISTRATION / SUPPORT / SUMMARIZE / GENERAL. Unparseable → GENERAL.</span></div>
+      </div>
+
+      <div class="lane b">
+        <div class="lane-label"><span class="dot"></span> Assistant.chat() — app/assistant.py</div>
+        <div class="step"><b>route == SUMMARIZE?</b>
+          <div class="branch">
+            <span class="fork"><b>yes</b> → summarize <span class="code">sessions.transcript(session_id)</span>, no tools bound</span>
+            <span class="fork"><b>no</b> → <span class="code">assistants[route].chat(message)</span></span>
+          </div></div>
+        <div class="step"><b>model.invoke(messages)</b> → response has tool_calls?
+          <div class="branch">
+            <span class="fork"><b>no</b> → return response content</span>
+            <span class="fork"><b>yes</b> → execute each tool call, append ToolMessages, loop</span>
+          </div></div>
+        <div class="step"><b>iteration &lt; MAX_TOOL_ITERATIONS (4)?</b>
+          <div class="branch">
+            <span class="fork"><b>yes</b> → back to model.invoke()</span>
+            <span class="fork"><b>no</b> → return the last message's content</span>
+          </div></div>
+      </div>
+    </div>
+
+    <div class="pipeline">
+      <div class="pstep"><div class="num">03</div><div class="body"><b>sessions.append_turn(session_id, message, reply)</b></div></div>
+      <div class="pstep"><div class="num">04</div><div class="body"><b>log.info(session_id, route, message, reply)</b> — one line per turn</div></div>
+      <div class="pstep"><div class="num">05</div><div class="body"><b>Return ChatResponse</b> <span class="code">{agent, reply, session_id}</span></div></div>
+    </div>
+
+    <ul class="notes">
+      <li>Moderation runs <b>before</b> session resolution and routing — a flagged message never reaches the session store, router, or any model call.</li>
+      <li>SUMMARIZE is the only route that ignores the literal incoming message — the trigger word itself ("resolved", "tldr") carries no content worth summarizing.</li>
+      <li>The tool loop is bounded by iteration count, not a retry mechanism — transient <span class="mono">.invoke()</span> failures are a separate, still-open gap (see README's Next Steps).</li>
+    </ul>
+  </div>
+</section>
+
+<section class="flow" id="f3">
+  <div class="wrap">
+    <div class="flow-head">
+      <p class="eyebrow">Workflow 3</p>
+      <h2>GET /internal/faq/search</h2>
+      <p>The non-agentic path — no LLM, no router, no session involvement.</p>
+    </div>
+    <div class="pipeline">
+      <div class="pstep"><div class="num">01</div><div class="body">GET <span class="code">/internal/faq/search?q=...&amp;topK=...</span> → <span class="code">search_faq_raw(q, topK)</span></div></div>
+      <div class="pstep"><div class="num">02</div><div class="body"><b>k = clamp(topK, 1..MAX_TOP_K)</b>, or <span class="code">DEFAULT_TOP_K</span> if unset</div></div>
+      <div class="pstep"><div class="num">03</div><div class="body"><b>vector_store().similarity_search(q, k)</b></div></div>
+      <div class="pstep"><div class="num">04</div><div class="body"><b>Map hits</b> to <span class="code">{section, source, text}</span> → return <span class="code">list[FaqSnippet]</span></div></div>
+    </div>
+    <ul class="notes">
+      <li><span class="mono">search_faq_raw()</span> is the same function the <span class="mono">search_studio_faq</span> tool calls from inside workflow 2's assistant loop — this endpoint exists to inspect retrieval quality directly (used by <span class="mono">evals/test_ragas_faq.py</span>'s context-precision checks too).</li>
+      <li>No auth today — see README's Keycloak-based JWT authentication Next Step.</li>
+    </ul>
+  </div>
+</section>
+
+<section class="flow" id="f4">
+  <div class="wrap">
+    <div class="flow-head">
+      <p class="eyebrow">Workflow 4</p>
+      <h2>Membership status lookup</h2>
+      <p>The <span class="code mono">lookup_membership_status</span> tool call — made from inside workflow 2's
+      assistant loop, only for the MEMBERSHIP_REGISTRATION route. Crosses into two sibling Spring Boot services
+      outside this repo.</p>
+    </div>
+
+    <div class="lanes">
+      <div class="lane a">
+        <div class="lane-label"><span class="dot"></span> studio-chatbot &middot; the tool call</div>
+        <div class="step"><b>Assistant decides to call the tool</b>
+          <span class="note">Only reachable from the MEMBERSHIP_REGISTRATION route, mid tool-loop.</span></div>
+        <div class="step"><b>Exactly one of <span class="code">email</span> / <span class="code">phone</span>?</b>
+          <div class="branch">
+            <span class="fork"><b>neither or both</b> → refuse, ask again</span>
+            <span class="fork"><b>exactly one</b> → proceed</span>
+          </div></div>
+        <div class="step"><b>GET</b> <span class="code">membership:8082/api/memberships/lookup</span>
+          <span class="note">The only cross-service call this repo ever makes.</span></div>
+        <div class="step"><b>Format the response</b>
+          <span class="note">One line per membership + schedule, or a plain-language miss/error — handed back to the model as a ToolMessage.</span></div>
+      </div>
+
+      <div class="lane b">
+        <div class="lane-label"><span class="dot"></span> membership service &middot; resolving the identifier</div>
+        <div class="step"><b>Email given?</b>
+          <div class="branch">
+            <span class="fork"><b>yes</b> → that's the resolved email</span>
+            <span class="fork"><b>no, phone given</b> → ask ContactsClient</span>
+          </div></div>
+        <div class="step"><b>ContactsClient</b> calls <span class="code">contacts:8081/api/contacts</span>
+          <span class="note">Fetches the full list, filters by phone client-side — that service has no phone-search endpoint of its own.</span></div>
+        <div class="step"><b>Resolved email is null?</b>
+          <div class="branch">
+            <span class="fork"><b>yes</b> → 200, empty list</span>
+            <span class="fork"><b>no</b> → query memberships by email</span>
+          </div></div>
+        <div class="step"><b><span class="code">findByEmailIgnoreCase</span></b>
+          <span class="note">Returns 200 with the matching membership(s), possibly still empty.</span></div>
+      </div>
+    </div>
+
+    <div class="bridge">membership never queries contacts by name — only by the phone it was just handed</div>
+
+    <div class="callout">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--warn)" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.86 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.86a2 2 0 0 0-3.4 0Z"/></svg>
+      <p><b>Narrows the gap, doesn't close it.</b> Neither service checks that the caller <em>is</em> the email or
+      phone they typed — it only stops "search anyone by name." "Check on my friend John" still gets refused until
+      John's own identifier is supplied — see <span class="mono">app/agents/membership.py</span>'s system prompt.</p>
+    </div>
+
+    <div class="outcomes">
+      <div class="outcome"><span class="tag">Malformed request</span><div class="msg">"Provide exactly one of email or phone, not both or neither."</div></div>
+      <div class="outcome"><span class="tag">Unknown / no membership</span><div class="msg">"No membership found for &lt;identifier&gt;." — same response either way; the tool can't tell the two apart.</div></div>
+      <div class="outcome"><span class="tag">Service unreachable</span><div class="msg">"Membership lookup is temporarily unavailable — please try again shortly."</div></div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <span>studio-chatbot / docs / WORKFLOWS.md</span>
+  <span>chatbot · membership · contacts-micro-service</span>
+</footer>

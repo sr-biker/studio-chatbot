@@ -38,6 +38,15 @@ class Settings(BaseSettings):
     # a k8s Secret), picked up automatically by google-auth's application-default flow.
     faq_google_doc_id: str = ""
 
+    # membership is a sibling Spring Boot service (~/projects/membership) -- class
+    # type/schedule, linked to a contact (~/projects/contacts-micro-service, PII) only by
+    # email. The chatbot only ever calls membership's GET /api/memberships/lookup
+    # (email-or-phone, sandboxed -- see app/tools/studio_api.py); membership itself resolves
+    # a phone to an email internally via its own ContactsClient, so this app never talks to
+    # contacts-micro-service directly. Local default assumes membership's docker-compose is
+    # run with its default port remapped off the shared 8080 -- see that repo's README.
+    membership_api_base_url: str = "http://localhost:8082"
+
     @property
     def vector_dimension(self) -> int:
         """Embedding vector width for the active profile's PGVector column.

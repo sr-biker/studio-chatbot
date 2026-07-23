@@ -40,6 +40,7 @@ from app.moderation import is_flagged
 from app.router import Route, Router
 from app.session_store import SessionStore
 from app.tools.faq import TOOLS as FAQ_TOOLS, search_faq_raw
+from app.tools.studio_api import TOOLS as MEMBER_LOOKUP_TOOLS
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -70,7 +71,9 @@ async def lifespan(app: FastAPI):
 
     model = chat_model()
     assistants = {
-        Route.MEMBERSHIP_REGISTRATION: Assistant(model, MEMBERSHIP_REGISTRATION_SYSTEM_PROMPT, FAQ_TOOLS),
+        Route.MEMBERSHIP_REGISTRATION: Assistant(
+            model, MEMBERSHIP_REGISTRATION_SYSTEM_PROMPT, FAQ_TOOLS + MEMBER_LOOKUP_TOOLS
+        ),
         Route.SUPPORT: Assistant(model, SUPPORT_SYSTEM_PROMPT, FAQ_TOOLS),
         Route.GENERAL: Assistant(model, GENERAL_SYSTEM_PROMPT, FAQ_TOOLS),
         # No FAQ tool -- summarizing the user's own text shouldn't be grounded in studio FAQ.
