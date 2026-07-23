@@ -1,0 +1,31 @@
+# Extra pins for running evals/ (RAGAS-based suites) on top of requirements.txt.
+#
+# ragas>=0.2 (as pinned loosely in requirements.txt) depends internally on nest_asyncio to
+# nest its own event loop inside pytest's. nest_asyncio is incompatible with Python 3.14's
+# asyncio.wait_for()/asyncio.timeout() implementation -- every RAGAS metric call fails with
+# "RuntimeError: Timeout should be used inside a task" and scores come back NaN. This is an
+# environment issue, not a RAG regression (reproduced with a 7-line nest_asyncio + wait_for
+# repro, no project code involved). Run evals/ under Python 3.13 (or earlier) until
+# ragas/nest_asyncio catch up to 3.14.
+#
+# A bare `pip install ragas==0.2.15` on top of requirements.txt still isn't enough -- letting
+# pip re-resolve from scratch today pulls in current-day langchain/langgraph majors that
+# conflict with this ragas version (e.g. it imports a langchain_community.chat_models.vertexai
+# path removed from newer langchain-community releases). These are the langchain-ecosystem
+# versions actually verified to import and pass evals/test_ragas_faq.py together on Python 3.13.
+#
+# Install:
+#   python3.13 -m venv .venv-evals && source .venv-evals/bin/activate
+#   pip install -r requirements.txt -r requirements-evals.txt
+#   RUN_RAGAS_EVALS=1 OPENAI_API_KEY=... pytest evals/test_ragas_faq.py -q
+
+ragas==0.2.15
+nest-asyncio==1.6.0
+langchain==0.3.30
+langchain-core==0.3.86
+langchain-community==0.3.31
+langchain-openai==0.3.35
+langchain-text-splitters==0.3.11
+langchain-postgres==0.0.17
+langchain-huggingface==0.3.1
+datasets==5.0.0
