@@ -5,7 +5,7 @@ agents). Not part of the default `pytest` run -- gated behind the RUN_RAGAS_EVAL
 than on every mocked test invocation.
 
 Run:
-    RUN_RAGAS_EVALS=1 OPENAI_API_KEY=... pytest evals/test_ragas_faq.py -q
+    RUN_RAGAS_EVALS=1 OPENAI_API_KEY=... pytest evals/eval_ragas_faq.py -q
 """
 
 import os

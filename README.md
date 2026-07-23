@@ -198,9 +198,9 @@ None of this is wired into CI/CD yet — it'd sit alongside the SAST/DAST pipeli
 `evals/` holds **offline quality measurement**, not a runtime guardrail (see "Runtime safety"
 above) — these are CI-gated regression checks against `data/faq.md`.
 
-- `evals/test_ragas_faq.py` — RAGAS faithfulness / answer-relevancy / context-precision over
+- `evals/eval_ragas_faq.py` — RAGAS faithfulness / answer-relevancy / context-precision over
   the FAQ RAG loop.
-- `evals/test_router_evals.py` — openai/evals-style suite: routing "match" cases (message →
+- `evals/eval_router_evals.py` — openai/evals-style suite: routing "match" cases (message →
   expected route) and reply "includes" cases (reply must mention phrases actually present in
   the FAQ, i.e. groundedness), structured the way an `openai/evals` YAML eval is shaped
   (input/ideal/grading) without depending on the `openai/evals` package itself.
