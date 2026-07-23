@@ -1,5 +1,5 @@
 """LLM-as-judge eval: qualitative checks over the full /chat path that "match" or
-"includes" grading (see eval_router_evals.py) can't express -- tone, refusal quality,
+"includes" grading (see test_router_evals.py) can't express -- tone, refusal quality,
 hallucination-avoidance -- where there's no single correct string to assert against.
 
 Each case gives a judge model the user input, the agent's actual reply, and a
@@ -8,11 +8,11 @@ The judge is a separate cheap/deterministic model (temperature 0) from the agent
 under test, same reasoning as router_chat_model() being separate from chat_model().
 
 Gated behind RUN_LLM_JUDGE_EVALS (needs a live DB + OPENAI_API_KEY), same reasoning as
-evals/eval_ragas_faq.py and evals/eval_router_evals.py -- these hit a real chat model
+evals/test_ragas_faq.py and evals/test_router_evals.py -- these hit a real chat model
 and real DB, not mocked unit tests.
 
 Run:
-    RUN_LLM_JUDGE_EVALS=1 OPENAI_API_KEY=... pytest evals/eval_llm_judge_evals.py -q
+    RUN_LLM_JUDGE_EVALS=1 OPENAI_API_KEY=... pytest evals/test_llm_judge_evals.py -q
 """
 
 import os

@@ -7,10 +7,10 @@ same input/ideal/grading shape so it could be lifted into a real openai/evals re
 later if this suite grows.
 
 Gated behind RUN_ROUTER_EVALS (needs a live DB + OPENAI_API_KEY), same reasoning as
-evals/eval_ragas_faq.py -- these hit a real chat model and real DB, not mocked unit tests.
+evals/test_ragas_faq.py -- these hit a real chat model and real DB, not mocked unit tests.
 
 Run:
-    RUN_ROUTER_EVALS=1 OPENAI_API_KEY=... pytest evals/eval_router_evals.py -q
+    RUN_ROUTER_EVALS=1 OPENAI_API_KEY=... pytest evals/test_router_evals.py -q
 """
 
 import os
