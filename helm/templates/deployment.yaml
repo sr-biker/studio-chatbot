@@ -39,9 +39,9 @@ spec:
               mountPath: /var/secrets/google
               readOnly: true
           {{- end }}
-          # Startup only checks FAQ freshness (a warning log, not a re-embed -- see
-          # app.faq_loader.check_faq_freshness) plus building the shared chat model,
-          # so this budget is mostly headroom, not a hard requirement.
+          # Startup only builds the shared chat model and Router/Assistants (no FAQ
+          # freshness check runs here -- see app/faq_loader.py), so this budget is
+          # mostly headroom, not a hard requirement.
           startupProbe:
             httpGet:
               path: /docs

@@ -94,48 +94,16 @@ def _delete_stale(source: str) -> None:
         conn.commit()
 
 
-def check_faq_freshness() -> None:
-    """Best-effort startup check: warns if the FAQ source has drifted from pgvector.
-
-    Fetches the current source text and hashes it, but never re-ingests -- ingestion
-    is an offline concern now (see scripts/ingest_faq.py, run as a Kubernetes Job/
-    CronJob), not something the request-serving app does on its own startup. This
-    just gives operators a signal in the logs that a re-ingest is due.
-
-    Swallows any failure (Drive unreachable, bad credentials, DB hiccup) rather than
-    raising -- this pod's ability to serve /chat must not depend on Google Drive being
-    reachable at startup; a broken freshness check should degrade to "no signal", not
-    crash-loop the pod.
-    """
-    try:
-        # Instantiating PGVector creates its tables if they don't exist yet (see
-        # vector_store()/PGVector.__post_init__) -- needed before the raw-SQL freshness
-        # check below, otherwise a brand-new DB (no prior ingest run) 500s with
-        # "relation langchain_pg_embedding does not exist" instead of just reporting stale.
-        vector_store()
-        text = _load_markdown_text()
-        content_hash = _content_hash(text)
-
-        if _already_ingested(content_hash):
-            log.info("FAQ knowledge is in sync (content_hash=%s).", content_hash[:12])
-        else:
-            log.warning(
-                "FAQ source has changed but pgvector is stale (content_hash=%s) -- "
-                "run the offline FAQ ingestion job to re-embed.",
-                content_hash[:12],
-            )
-    except Exception:
-        log.exception("FAQ freshness check failed; continuing startup without it.")
-
-
 def load_faq_knowledge() -> None:
     """Loads, chunks, and (re-)ingests the FAQ document into the pgvector store.
 
     No-op if the current FAQ content's hash already matches what's stored. If the
     content changed, deletes the old chunks for SOURCE_ID and re-ingests fresh ones,
     split by markdown header so each chunk is one coherent FAQ section. Run offline
-    (see scripts/ingest_faq.py), not from the app's own startup -- see
-    check_faq_freshness() for what the app does instead.
+    (see scripts/ingest_faq.py), not from the app's own startup -- a per-pod startup
+    check that calls out to Google Drive doesn't scale with replica count (every pod
+    restart/scale-up would hit Drive's API), so the running app no longer checks FAQ
+    freshness at all; ingestion is purely the offline job's responsibility.
     """
     # Instantiating PGVector creates its tables if they don't exist yet (see
     # vector_store()/PGVector.__post_init__) -- must happen before the raw-SQL

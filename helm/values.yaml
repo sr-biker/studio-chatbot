@@ -37,8 +37,8 @@ service:
 
 # Offline FAQ (re-)ingestion. Off by default -- run on demand via:
 #   helm upgrade studio-chatbot helm -f helm/values.yaml --set ingestJob.enabled=true
-# not on every install/upgrade, and not from the app pod itself (see app/faq_loader.py's
-# check_faq_freshness vs load_faq_knowledge split).
+# not on every install/upgrade, and not from the app pod itself -- the app pod does no
+# FAQ freshness check at all (see app/faq_loader.py's load_faq_knowledge).
 ingestJob:
   enabled: false
 

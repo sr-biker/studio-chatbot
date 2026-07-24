@@ -18,9 +18,9 @@ subsequent calls so summarize has a transcript to work with.
   account auth, `app/faq_loader.py`) — the product team edits it directly, no deploy needed
   to publish a change. Embedding/ingestion runs offline as a Kubernetes `Job`
   (`scripts/ingest_faq.py`, `ingestJob.enabled`), idempotent on a whole-document content hash.
-  The app pod itself only does a **best-effort, read-only freshness check** at startup
-  (`check_faq_freshness()`) — logs a warning if pgvector has drifted, never re-embeds, and
-  never blocks/crash-loops startup if Drive is unreachable.
+  The app pod itself does no FAQ freshness check at startup — a per-pod Drive
+  call doesn't scale with replica count/restarts, so ingestion is purely the
+  offline job's concern.
 - **Runtime safety.** Every `/chat` message is checked against OpenAI's Moderation API before
   reaching any agent or the session store; flagged messages get a 400.
 - **Observability.** Every chat turn is logged in one line (session_id, route, message, reply);
@@ -411,9 +411,8 @@ Two different kinds of upgrade, two different risk profiles:
   user -- scope it tightly (only the `impersonation` permission, only fires after a fresh OTP
   verification, short-lived tokens), and log every exchange (ties into the moderation-style
   logging already on `/chat`) rather than running it as a broad admin credential.
-- **FAQ re-ingestion is now an offline Job, not app startup (Maintainability) — mostly done,
-  a few gaps remain.** `app.main`'s `lifespan()` only calls `check_faq_freshness()` (a
-  read-only content-hash check that logs a warning if pgvector is stale, never re-embeds);
+- **FAQ re-ingestion is fully offline, not app startup (Maintainability) — mostly done,
+  a few gaps remain.** `app.main`'s `lifespan()` does not touch FAQ freshness at all;
   the actual embedding work lives in `scripts/ingest_faq.py`, run via
   `helm/templates/ingest-job.yaml` (`ingestJob.enabled`, off by default) — see
   `docs/WORKFLOWS.md` workflows 1 and 1b. This keeps embedding compute (and the Drive-read

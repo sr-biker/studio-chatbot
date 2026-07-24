@@ -35,7 +35,6 @@ from app.agents import (
 from app.ai_config import chat_model, router_chat_model, summarize_model
 from app.assistant import Assistant
 from app.config import settings
-from app.faq_loader import check_faq_freshness
 from app.moderation import is_flagged
 from app.router import Route, Router
 from app.session_store import SessionStore
@@ -56,10 +55,9 @@ class AppState(TypedDict):
 async def lifespan(app: FastAPI):
     """FastAPI lifespan: runs startup work once, then shares built state via request.state.
 
-    Checks FAQ freshness (logs a warning if pgvector is stale -- doesn't re-ingest;
-    see app.faq_loader.check_faq_freshness), builds the shared chat model and one
-    Assistant per Route, and constructs the Router and SessionStore -- all yielded as
-    a dict so each field is reachable as request.state.<key> in endpoint handlers.
+    Builds the shared chat model and one Assistant per Route, and constructs the Router
+    and SessionStore -- all yielded as a dict so each field is reachable as
+    request.state.<key> in endpoint handlers.
 
     Args:
         app: The FastAPI app instance (required by the lifespan protocol, unused here).
@@ -67,8 +65,6 @@ async def lifespan(app: FastAPI):
     Yields:
         An AppState dict: {"assistants": ..., "router": ..., "sessions": ...}.
     """
-    check_faq_freshness()
-
     model = chat_model()
     assistants = {
         Route.MEMBERSHIP_REGISTRATION: Assistant(

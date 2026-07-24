@@ -33,8 +33,8 @@ def search_faq_raw(query: str, top_k: int | None = None) -> list[dict]:
 # Cached separately from search_faq_raw() so the cache key is the resolved k, not the raw
 # (possibly None) top_k -- same query at different effective k must be distinct entries.
 # Safe for the process lifetime: FAQ content only changes via a fresh ingest + redeploy (see
-# app.faq_loader), and check_faq_freshness() only runs once at startup (app/main.py), so
-# there's no in-process path that changes what a given (query, k) should return. Returns a
+# app.faq_loader), never mid-process, so there's no in-process path that changes what a
+# given (query, k) should return. Returns a
 # tuple, not a list, so the result itself stays hashable-safe to cache (search_faq_raw wraps
 # it back into a list per call so callers can't mutate the cached entry).
 @lru_cache(maxsize=RETRIEVAL_CACHE_SIZE)
