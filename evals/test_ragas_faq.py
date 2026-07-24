@@ -11,6 +11,7 @@ Run:
 import os
 from functools import lru_cache
 
+import pandas as pd
 import pytest
 
 pytestmark = pytest.mark.skipif(
@@ -24,6 +25,21 @@ pytestmark = pytest.mark.skipif(
 MIN_FAITHFULNESS = 0.8
 MIN_ANSWER_RELEVANCY = 0.8
 MIN_CONTEXT_PRECISION = 0.8
+
+# A control case's answer_relevancy is *expected* to score near 0 (see
+# evals/faq_eval_dataset.py's expect_low_relevancy) -- anything above this means the judge
+# failed to notice a genuine non-answer, which is the opposite failure mode from the main
+# threshold above and gets its own assertion rather than being averaged into it.
+MAX_CONTROL_CASE_RELEVANCY = 0.3
+
+# Deliberately a different, stronger model than app.ai_config.chat_model() (gpt-4o-mini) --
+# judge and generator sharing a model risks self-preference bias (a model rating its own
+# phrasing/reasoning more favorably), and empirically gpt-4o-mini as judge was misfiring:
+# RAGAS's answer_relevancy has a noncommittal-answer detector that zeroed out a perfectly
+# good, on-topic reply just because it ended with "contact the front desk for more info" --
+# gpt-4o as judge correctly told that apart from an actual non-answer (see the "swimming
+# pool" control case above) without changing what gpt-4o-mini actually generates.
+JUDGE_MODEL = "gpt-4o"
 
 
 @lru_cache
@@ -41,26 +57,40 @@ def _build_ragas_dataset():
 
     assistant = Assistant(chat_model(), SUPPORT_SYSTEM_PROMPT, FAQ_TOOLS)
 
-    questions, answers, contexts, ground_truths = [], [], [], []
+    questions, answers, contexts, ground_truths, control_flags = [], [], [], [], []
     for case in FAQ_EVAL_CASES:
         answers.append(assistant.chat(case["question"]))
         questions.append(case["question"])
         ground_truths.append(case["ground_truth"])
         contexts.append([hit["text"] for hit in search_faq_raw(case["question"])])
+        control_flags.append(case.get("expect_low_relevancy", False))
 
-    return Dataset.from_dict(
+    dataset = Dataset.from_dict(
         {"question": questions, "answer": answers, "contexts": contexts, "ground_truth": ground_truths}
     )
+    return dataset, control_flags
 
 
 def test_faq_rag_meets_ragas_thresholds():
+    from langchain_openai import ChatOpenAI
     from ragas import evaluate
+    from ragas.llms import LangchainLLMWrapper
     from ragas.metrics import answer_relevancy, context_precision, faithfulness
 
-    dataset = _build_ragas_dataset()
-    result = evaluate(dataset, metrics=[faithfulness, answer_relevancy, context_precision])
-    scores = result.to_pandas().mean(numeric_only=True)
+    from app.config import settings
 
-    assert scores["faithfulness"] >= MIN_FAITHFULNESS, scores
-    assert scores["answer_relevancy"] >= MIN_ANSWER_RELEVANCY, scores
-    assert scores["context_precision"] >= MIN_CONTEXT_PRECISION, scores
+    dataset, control_flags = _build_ragas_dataset()
+    judge = LangchainLLMWrapper(ChatOpenAI(model=JUDGE_MODEL, api_key=settings.openai_api_key))
+    result = evaluate(dataset, metrics=[faithfulness, answer_relevancy, context_precision], llm=judge)
+    df = result.to_pandas()
+
+    control_mask = pd.Series(control_flags, index=df.index)
+    main_scores = df[~control_mask].mean(numeric_only=True)
+    control_scores = df[control_mask]
+
+    assert main_scores["faithfulness"] >= MIN_FAITHFULNESS, main_scores
+    assert main_scores["answer_relevancy"] >= MIN_ANSWER_RELEVANCY, main_scores
+    assert main_scores["context_precision"] >= MIN_CONTEXT_PRECISION, main_scores
+
+    for _, row in control_scores.iterrows():
+        assert row["answer_relevancy"] <= MAX_CONTROL_CASE_RELEVANCY, row

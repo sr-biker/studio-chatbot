@@ -1,7 +1,13 @@
 """Hand-labeled eval questions grounded in data/faq.md, used by both the RAGAS suite
 (faithfulness/answer-relevancy/context-precision) and the openai-evals-style exact-match
 suite. Keep `ground_truth` short and unambiguous -- these are graded by an LLM judge
-(RAGAS) or containment (openai-evals-style), not free-form comparison."""
+(RAGAS) or containment (openai-evals-style), not free-form comparison.
+
+`expect_low_relevancy: True` marks a control case where a *correct* reply is a genuine
+non-answer (something not in the FAQ), so RAGAS's answer_relevancy noncommittal detector
+should score it near 0 -- see evals/test_ragas_faq.py, which scores these separately from
+the main threshold rather than averaging them in (a correct 0.0 would otherwise just drag
+the pass/fail mean down alongside a wrong one)."""
 
 FAQ_EVAL_CASES = [
     {
@@ -31,5 +37,13 @@ FAQ_EVAL_CASES = [
     {
         "question": "How much does a membership cost per month with a 1-year commitment?",
         "ground_truth": "$69 per month with a 1-year commitment ($79/month month-to-month, $59/month with a 2-year commitment).",
+    },
+    # Deliberately not covered by the FAQ (no pool/swimming content anywhere in it) -- the
+    # correct behavior here is a genuine non-answer (say so, point to the front desk), not a
+    # fabricated one. See the module docstring's note on expect_low_relevancy.
+    {
+        "question": "Do you have a swimming pool?",
+        "ground_truth": "The FAQ doesn't mention a pool; the assistant should say it doesn't have that information rather than guessing, and suggest checking with the front desk.",
+        "expect_low_relevancy": True,
     },
 ]

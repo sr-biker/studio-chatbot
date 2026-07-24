@@ -29,6 +29,7 @@ from langsmith.evaluation import evaluate
 
 from app.ai_config import chat_model
 from app.assistant import Assistant
+from app.config import settings
 from app.tools.faq import TOOLS as FAQ_TOOLS, search_faq_raw
 from app.tools.studio_api import TOOLS as MEMBER_LOOKUP_TOOLS
 from evals.faq_eval_dataset import FAQ_EVAL_CASES
@@ -52,6 +53,14 @@ MIN_PASS_RATE = 0.9
 MIN_FAITHFULNESS = 0.8
 MIN_ANSWER_RELEVANCY = 0.8
 MIN_CONTEXT_PRECISION = 0.8
+MAX_CONTROL_CASE_RELEVANCY = 0.8
+
+# Deliberately different from app.ai_config.chat_model() (gpt-4o-mini), same reasoning as
+# evals/test_ragas_faq.py's JUDGE_MODEL -- gpt-4o-mini as judge was zeroing out perfectly
+# relevant replies just for ending with a "contact the front desk" pointer (RAGAS's
+# answer_relevancy noncommittal detector misfiring), and sharing a model between generator
+# and judge risks self-preference bias on top of that.
+JUDGE_MODEL = "gpt-4o"
 
 client = Client()
 
@@ -64,26 +73,42 @@ def _ragas_scores(prompt_text: str, route: str) -> dict:
         route: The route this prompt is for -- picks which tools the assistant gets.
 
     Returns:
-        {"faithfulness": ..., "answer_relevancy": ..., "context_precision": ...}
+        Mean {"faithfulness": ..., "answer_relevancy": ..., "context_precision": ...} over
+        the non-control cases, plus "control_case_relevancy_ok": bool -- whether every
+        expect_low_relevancy case (see evals/faq_eval_dataset.py) correctly scored low.
     """
     from datasets import Dataset
+    from langchain_openai import ChatOpenAI
     from ragas import evaluate as ragas_evaluate
+    from ragas.llms import LangchainLLMWrapper
     from ragas.metrics import answer_relevancy, context_precision, faithfulness
 
     assistant = Assistant(chat_model(), prompt_text, ROUTE_TOOLS[route])
 
-    questions, answers, contexts, ground_truths = [], [], [], []
+    questions, answers, contexts, ground_truths, control_flags = [], [], [], [], []
     for case in FAQ_EVAL_CASES:
         answers.append(assistant.chat(case["question"]))
         questions.append(case["question"])
         ground_truths.append(case["ground_truth"])
         contexts.append([hit["text"] for hit in search_faq_raw(case["question"])])
+        control_flags.append(case.get("expect_low_relevancy", False))
 
     dataset = Dataset.from_dict(
         {"question": questions, "answer": answers, "contexts": contexts, "ground_truth": ground_truths}
     )
-    result = ragas_evaluate(dataset, metrics=[faithfulness, answer_relevancy, context_precision])
-    return result.to_pandas().mean(numeric_only=True).to_dict()
+    judge = LangchainLLMWrapper(ChatOpenAI(model=JUDGE_MODEL, api_key=settings.openai_api_key))
+    result = ragas_evaluate(dataset, metrics=[faithfulness, answer_relevancy, context_precision], llm=judge)
+    df = result.to_pandas()
+
+    is_control = [flag for flag in control_flags]
+    main_df = df[[not flag for flag in is_control]]
+    control_df = df[is_control]
+
+    scores = main_df.mean(numeric_only=True).to_dict()
+    scores["control_case_relevancy_ok"] = bool(
+        (control_df["answer_relevancy"] <= MAX_CONTROL_CASE_RELEVANCY).all()
+    ) if len(control_df) else True
+    return scores
 
 
 def main():
@@ -119,13 +144,14 @@ def main():
     print("\nRunning RAGAS (faithfulness / answer_relevancy / context_precision)...")
     ragas_scores = _ragas_scores(prompt_text, route)
     for key, value in ragas_scores.items():
-        print(f"  {key}: {value:.3f}")
+        print(f"  {key}: {value:.3f}" if isinstance(value, float) else f"  {key}: {value}")
 
     judge_ok = pass_rate >= MIN_PASS_RATE
     ragas_ok = (
         ragas_scores["faithfulness"] >= MIN_FAITHFULNESS
         and ragas_scores["answer_relevancy"] >= MIN_ANSWER_RELEVANCY
         and ragas_scores["context_precision"] >= MIN_CONTEXT_PRECISION
+        and ragas_scores["control_case_relevancy_ok"]
     )
 
     if judge_ok and ragas_ok:
