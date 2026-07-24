@@ -1,11 +1,14 @@
 """LangChain tool that grounds studio questions in the FAQ pgvector store via RAG."""
 
+from functools import lru_cache
+
 from langchain_core.tools import tool
 
 from app.ai_config import vector_store
 
 DEFAULT_TOP_K = 4
 MAX_TOP_K = 10
+RETRIEVAL_CACHE_SIZE = 256
 
 
 def search_faq_raw(query: str, top_k: int | None = None) -> list[dict]:
@@ -24,11 +27,23 @@ def search_faq_raw(query: str, top_k: int | None = None) -> list[dict]:
         matched chunk, ordered by similarity.
     """
     k = min(top_k, MAX_TOP_K) if (top_k and top_k > 0) else DEFAULT_TOP_K
+    return list(_cached_search(query, k))
+
+
+# Cached separately from search_faq_raw() so the cache key is the resolved k, not the raw
+# (possibly None) top_k -- same query at different effective k must be distinct entries.
+# Safe for the process lifetime: FAQ content only changes via a fresh ingest + redeploy (see
+# app.faq_loader), and check_faq_freshness() only runs once at startup (app/main.py), so
+# there's no in-process path that changes what a given (query, k) should return. Returns a
+# tuple, not a list, so the result itself stays hashable-safe to cache (search_faq_raw wraps
+# it back into a list per call so callers can't mutate the cached entry).
+@lru_cache(maxsize=RETRIEVAL_CACHE_SIZE)
+def _cached_search(query: str, k: int) -> tuple[dict, ...]:
     hits = vector_store().similarity_search(query, k=k)
-    return [
+    return tuple(
         {"section": doc.metadata.get("section"), "source": doc.metadata.get("source"), "text": doc.page_content}
         for doc in hits
-    ]
+    )
 
 
 @tool

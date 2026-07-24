@@ -1,7 +1,7 @@
 """Ingests gym-equipment photos into the same pgvector FAQ store as data/faq.md.
 
-embedding_model() (app/ai_config.py) is text-only in both profiles -- MiniLM locally,
-OpenAI text-embeddings in prod -- so there's no direct image-embedding path here. Instead
+embedding_model() (app/ai_config.py) is OpenAI text-embeddings  -- so there's no direct image-embedding path here.
+Instead
 each image is captioned once by chat_model() (gpt-4o-mini, vision-capable) and the caption
 text is what actually gets embedded. This means retrieval quality for an image question is
 bounded by how well the caption describes it, not by any visual-similarity search -- a
