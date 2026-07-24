@@ -32,3 +32,12 @@ data:
   LANGCHAIN_TRACING_V2: "true"
   LANGCHAIN_PROJECT: {{ .Values.config.langchainProject | quote }}
   {{- end }}
+  {{- if .Values.config.supportPromptRef }}
+  SUPPORT_PROMPT_REF: {{ .Values.config.supportPromptRef | quote }}
+  {{- end }}
+  {{- if .Values.config.generalPromptRef }}
+  GENERAL_PROMPT_REF: {{ .Values.config.generalPromptRef | quote }}
+  {{- end }}
+  {{- if .Values.config.membershipPromptRef }}
+  MEMBERSHIP_PROMPT_REF: {{ .Values.config.membershipPromptRef | quote }}
+  {{- end }}

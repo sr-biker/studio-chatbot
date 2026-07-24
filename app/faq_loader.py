@@ -108,6 +108,11 @@ def check_faq_freshness() -> None:
     crash-loop the pod.
     """
     try:
+        # Instantiating PGVector creates its tables if they don't exist yet (see
+        # vector_store()/PGVector.__post_init__) -- needed before the raw-SQL freshness
+        # check below, otherwise a brand-new DB (no prior ingest run) 500s with
+        # "relation langchain_pg_embedding does not exist" instead of just reporting stale.
+        vector_store()
         text = _load_markdown_text()
         content_hash = _content_hash(text)
 
@@ -132,6 +137,13 @@ def load_faq_knowledge() -> None:
     (see scripts/ingest_faq.py), not from the app's own startup -- see
     check_faq_freshness() for what the app does instead.
     """
+    # Instantiating PGVector creates its tables if they don't exist yet (see
+    # vector_store()/PGVector.__post_init__) -- must happen before the raw-SQL
+    # _already_ingested check below, otherwise a brand-new DB (first-ever ingest run,
+    # e.g. CI's throwaway container) fails with "relation langchain_pg_embedding does
+    # not exist" instead of just finding zero rows.
+    store = vector_store()
+
     text = _load_markdown_text()
     content_hash = _content_hash(text)
 
@@ -161,5 +173,5 @@ def load_faq_knowledge() -> None:
         log.warning("FAQ document produced no chunks; nothing ingested.")
         return
 
-    vector_store().add_documents(documents)
+    store.add_documents(documents)
     log.info("Ingested %d FAQ chunks from %s.", len(documents), SOURCE_ID)

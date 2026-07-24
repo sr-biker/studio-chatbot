@@ -4,7 +4,7 @@ its content has changed since the last run; no-op otherwise (see
 app.faq_loader.load_faq_knowledge's content-hash idempotency).
 
 Run:
-    python scripts/ingest_faq.py
+    python -m scripts.ingest_faq
 """
 
 import logging

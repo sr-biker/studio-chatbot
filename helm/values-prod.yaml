@@ -24,6 +24,14 @@ config:
   # for the redaction/sampling question before enabling this against real user traffic.
   langchainTracing: false
   langchainProject: studio-chatbot-prod
+  # Pins the exact LangSmith Hub prompt commit each agent runs in prod -- see app/prompts.py
+  # and scripts/promote_prompt.py. Default in app/config.py is "latest", which is right for
+  # local dev but wrong here: prod must not pick up a CSR's in-progress Hub edit until
+  # promote_prompt.py has verified it (judge pass rate + RAGAS) and this hash is bumped by
+  # hand. The commit is also tagged "prod" on the Hub itself for visibility in the UI, but
+  # that tag is just a human label -- the SDK has no tag-based ref, so this hash is the
+  # actual source of truth for what prod runs.
+  supportPromptRef: da0aa7662333e3c5af9da256ff527188044c9dba14816d4a2b04d51b627efca5
   # prod also needs DB_SECRET_NAME + AWS_REGION -- set via --set at deploy time (not checked
   # in) since they're environment/account specific.
 

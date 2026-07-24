@@ -74,11 +74,9 @@ POST /chat --> Router (keyword short-circuit, then LLM classifier)
 
 ## Embedding models: local vs. prod
 
-Both profiles use a same-family embedding model, but **not the same vectors or table** — a
-pgvector column is fixed-dimension, so local (`sentence-transformers/all-MiniLM-L6-v2`,
-384-dim, in-process, no API key needed) and prod (`text-embedding-3-small`, 1536-dim, OpenAI)
-each get their own store, re-embedded from the same FAQ source. There is no cross-env vector
-sharing.
+Both profiles use the same OpenAI embedding model (`text-embedding-3-small`, 1536-dim), but
+**not the same vectors or table** — each profile points at its own DB and re-embeds from the
+same FAQ source independently. There is no cross-env vector sharing.
 
 ## Providers
 
@@ -86,7 +84,7 @@ sharing.
 |-----------------------|---------------------------------|------------------------------------------------|
 | Chat / agents / router | OpenAI (`gpt-4o-mini`)         | OpenAI (`gpt-4o-mini`, override via `chatModelName`) |
 | Summarize agent         | OpenAI (`gpt-5-nano`)          | OpenAI (`gpt-5-nano`, override via `summarizeModelName`) |
-| Embeddings              | HuggingFace (MiniLM, local)    | OpenAI (`text-embedding-3-small`)              |
+| Embeddings              | OpenAI (`text-embedding-3-small`) | OpenAI (`text-embedding-3-small`)           |
 | Vector store            | pgvector (helm, on kind)        | pgvector (helm, on k8s)                        |
 
 Chat/agents/router call OpenAI directly in both profiles. `OPENAI_API_KEY` is required in prod

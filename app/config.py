@@ -21,8 +21,16 @@ class Settings(BaseSettings):
     # Cheap/fast tier for the summarize agent -- no tool-calling loop, short outputs, doesn't
     # need chat_model_name's quality; gpt-5-nano is OpenAI's Haiku-equivalent tier.
     summarize_model_name: str = "gpt-5-nano"
-    embedding_model_name: str = "sentence-transformers/all-MiniLM-L6-v2"
     openai_embedding_model_name: str = "text-embedding-3-small"
+
+    # Refs (commit hash, or "latest") pinning which LangSmith Hub prompt commit each named
+    # agent runs -- see app/prompts.py. Default "latest" is right for local dev (immediately
+    # see Hub edits); prod overrides these via values-prod.yaml to a specific commit hash
+    # that scripts/promote_prompt.py has verified passes the eval suite, so a CSR's in-
+    # progress Hub edit never reaches prod traffic on its own.
+    support_prompt_ref: str = "latest"
+    general_prompt_ref: str = "latest"
+    membership_prompt_ref: str = "latest"
 
     db_host: str = "localhost"
     db_port: str = "5432"
@@ -51,15 +59,14 @@ class Settings(BaseSettings):
     def vector_dimension(self) -> int:
         """Embedding vector width for the active profile's PGVector column.
 
-        Each env re-embeds its own store with its own model — a PGVector column is
-        fixed-dimension, so local (MiniLM, 384) and prod (OpenAI text-embedding-3-small,
-        1536) can never share one physical store. "Similar embedding models" means same
-        family/quality tier, not identical vectors or a shared table.
+        Both profiles use OpenAI text-embedding-3-small now, so this is the same in local
+        and prod -- kept as a property (rather than inlined at call sites) since the two
+        profiles still never share a physical store (separate DBs).
 
         Returns:
-            384 when app_profile is "local", 1536 otherwise (prod).
+            1536.
         """
-        return 384 if self.app_profile == "local" else 1536
+        return 1536
 
     @property
     def faq_local_path(self) -> Path:

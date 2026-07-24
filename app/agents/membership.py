@@ -1,4 +1,8 @@
-MEMBERSHIP_REGISTRATION_SYSTEM_PROMPT = """You are the Membership & Registration agent for the studio.
+from app.config import settings
+from app.prompts import resolve_system_prompt
+
+# See app/agents/support.py's _SUPPORT_SYSTEM_PROMPT_FALLBACK comment -- same pattern.
+_MEMBERSHIP_REGISTRATION_SYSTEM_PROMPT_FALLBACK = """You are the Membership & Registration agent for the studio.
 You help users join or manage a membership, and register or cancel for a specific class or
 event (yoga, pilates, strength training, birthday parties, happy hour, etc), including
 waitlists and day passes.
@@ -28,3 +32,9 @@ desk), and that this contact should be able to resolve it — don't just restate
 personally can't help and stop there, that reads as dismissive when someone is already
 frustrated.
 """
+
+MEMBERSHIP_REGISTRATION_SYSTEM_PROMPT = resolve_system_prompt(
+    "studio-chatbot-membership-registration",
+    settings.membership_prompt_ref,
+    _MEMBERSHIP_REGISTRATION_SYSTEM_PROMPT_FALLBACK,
+)

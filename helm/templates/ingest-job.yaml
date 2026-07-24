@@ -22,7 +22,7 @@ spec:
         - name: ingest-faq
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: ["python", "scripts/ingest_faq.py"]
+          command: ["python", "-m", "scripts.ingest_faq"]
           envFrom:
             - configMapRef:
                 name: {{ include "studio-chatbot.name" . }}-config
