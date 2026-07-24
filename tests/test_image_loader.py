@@ -18,6 +18,10 @@ def _mock_pool(already_ingested: bool):
     return pool, conn
 
 
+# Full happy path: caption the image via chat_model, embed it, and delete any stale rows
+# for this same source first (the content-hash idempotency pattern shared with
+# app.faq_loader) -- checks the actual document content/metadata that gets stored, not
+# just that add_documents was called.
 def test_load_equipment_image_captions_and_embeds_new_image(tmp_path):
     image_path = tmp_path / "gym.png"
     image_path.write_bytes(FAKE_IMAGE_BYTES)
@@ -45,6 +49,8 @@ def test_load_equipment_image_captions_and_embeds_new_image(tmp_path):
     )
 
 
+# Idempotency check: re-running against an unchanged image must be a no-op -- no wasted
+# chat_model captioning call, no re-embedding.
 def test_load_equipment_image_skips_when_content_hash_already_ingested(tmp_path):
     image_path = tmp_path / "gym.png"
     image_path.write_bytes(FAKE_IMAGE_BYTES)
@@ -64,6 +70,8 @@ def test_load_equipment_image_skips_when_content_hash_already_ingested(tmp_path)
     vector_store.return_value.add_documents.assert_not_called()
 
 
+# section defaults to "Gym Equipment" (see the first test) but must be overridable per
+# call, since a real ingest batch spans multiple equipment categories.
 def test_load_equipment_image_uses_custom_section(tmp_path):
     image_path = tmp_path / "gym.jpg"
     image_path.write_bytes(FAKE_IMAGE_BYTES)

@@ -40,6 +40,9 @@ GROUNDEDNESS_CASES = [
 ]
 
 
+# Unlike tests/test_router.py (mocked model, pure keyword-shortcut logic), this calls the
+# real LLM classifier for every case here -- these inputs are deliberately ambiguous enough
+# to miss the keyword short-circuits and actually exercise router_chat_model()'s judgment.
 @pytest.mark.parametrize("case", ROUTING_CASES, ids=[c["input"] for c in ROUTING_CASES])
 def test_router_matches_ideal_route(case):
     from app.ai_config import router_chat_model
@@ -49,6 +52,10 @@ def test_router_matches_ideal_route(case):
     assert router.route(case["input"]).value == case["ideal"]
 
 
+# Deliberately a crude substring check, not a semantic one (that's RAGAS's job, see
+# test_ragas_faq.py's faithfulness) -- the point is a cheap, fast tripwire: if the reply
+# doesn't even contain a fact straight out of the source FAQ text, retrieval or the prompt
+# broke badly enough that a subtler semantic score isn't needed to notice.
 @pytest.mark.parametrize("case", GROUNDEDNESS_CASES, ids=[c["input"] for c in GROUNDEDNESS_CASES])
 def test_reply_is_grounded_in_faq(case):
     from app.agents.support import SUPPORT_SYSTEM_PROMPT

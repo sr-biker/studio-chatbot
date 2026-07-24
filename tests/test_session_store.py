@@ -26,6 +26,9 @@ def test_multiple_turns_accumulate_in_order():
     )
 
 
+# One session's history must never leak into another's transcript -- the dict-keyed-by-
+# session_id design this test locks in is exactly what breaks across pod restarts/replicas
+# (see the module docstring's note on needing a shared store for that case).
 def test_sessions_are_isolated_by_session_id():
     store = SessionStore()
     store.append_turn("s1", "hello from s1", "hi s1")
@@ -34,6 +37,9 @@ def test_sessions_are_isolated_by_session_id():
     assert store.transcript("s2") == "user: hello from s2\nassistant: hi s2"
 
 
+# Unbounded growth guard: a very long-lived session_id must not accumulate turns forever
+# (memory + prompt-size risk) -- the oldest pair of lines is evicted once the cap is
+# exceeded, keeping exactly MAX_TURNS turns, never MAX_TURNS + 1.
 def test_history_is_capped_at_max_turns():
     store = SessionStore()
     # One turn past the cap -- the oldest turn's pair of lines must be evicted.

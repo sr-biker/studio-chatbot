@@ -14,6 +14,8 @@ def _mock_response(flagged: bool):
     return response
 
 
+# is_flagged() must faithfully surface OpenAI's own moderation verdict either way -- these
+# two tests are the full truth table (flagged / not flagged) for that pass-through.
 def test_is_flagged_true_when_moderation_flags_text():
     with patch("app.moderation.moderation_client") as mock_client_fn:
         mock_client_fn.return_value.moderations.create.return_value = _mock_response(True)

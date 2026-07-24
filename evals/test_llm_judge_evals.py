@@ -116,6 +116,13 @@ def _judge(judge_model, user_input: str, reply: str, rubric: str) -> tuple[bool,
     return verdict.upper().startswith("PASS"), verdict
 
 
+# End-to-end: builds the real per-route assistant, runs moderation first exactly like the
+# actual /chat path does (so a flagged input never reaches the model), then judges whatever
+# came out. Judge is router_chat_model() -- same underlying model as chat_model(), just
+# temperature 0 for deterministic grading -- not a different/stronger model the way
+# test_ragas_faq.py's JUDGE_MODEL is. That's fine here: these are yes/no rubric checks on
+# safety/tone properties, not the noncommittal-answer-detector class of bug that made judge/
+# generator separation necessary for RAGAS's answer_relevancy.
 @pytest.mark.parametrize(
     "case,route", JUDGE_RUNS, ids=[f"{case['id']}[{route}]" for case, route in JUDGE_RUNS]
 )

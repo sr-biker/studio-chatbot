@@ -42,6 +42,9 @@ MAX_CONTROL_CASE_RELEVANCY = 0.3
 JUDGE_MODEL = "gpt-4o"
 
 
+# Cached because building the dataset means one live chat_model + FAQ-search call per
+# FAQ_EVAL_CASES entry -- if this suite ever grows more than one test function, each would
+# otherwise re-run every case from scratch instead of reusing the first run's replies.
 @lru_cache
 def _build_ragas_dataset():
     from datasets import Dataset
@@ -72,6 +75,14 @@ def _build_ragas_dataset():
 
 
 def test_faq_rag_meets_ragas_thresholds():
+    # faithfulness: does the reply only state things the retrieved FAQ context actually
+    #   supports (catches hallucinated policy details).
+    # answer_relevancy: is the reply's content actually on-topic for the question asked
+    #   (reverse-generates synthetic questions from the reply, compares to the real one) --
+    #   this is the metric the control cases below exist to keep honest.
+    # context_precision: did FAQ retrieval surface the relevant chunk near the top, not
+    #   buried under irrelevant ones (catches a broken/regressed retriever, independent of
+    #   whether the generation model recovers anyway).
     from langchain_openai import ChatOpenAI
     from ragas import evaluate
     from ragas.llms import LangchainLLMWrapper
@@ -84,6 +95,9 @@ def test_faq_rag_meets_ragas_thresholds():
     result = evaluate(dataset, metrics=[faithfulness, answer_relevancy, context_precision], llm=judge)
     df = result.to_pandas()
 
+    # Split real questions from expect_low_relevancy control cases before aggregating --
+    # averaging a control case's *correct* 0.0 into the main mean would drag down a healthy
+    # score for the wrong reason (see MAX_CONTROL_CASE_RELEVANCY above).
     control_mask = pd.Series(control_flags, index=df.index)
     main_scores = df[~control_mask].mean(numeric_only=True)
     control_scores = df[control_mask]
@@ -92,5 +106,7 @@ def test_faq_rag_meets_ragas_thresholds():
     assert main_scores["answer_relevancy"] >= MIN_ANSWER_RELEVANCY, main_scores
     assert main_scores["context_precision"] >= MIN_CONTEXT_PRECISION, main_scores
 
+    # Inverse assertion from the main thresholds: a control case scoring *high* here means
+    # the judge failed to recognize a genuine non-answer, i.e. the judge itself regressed.
     for _, row in control_scores.iterrows():
         assert row["answer_relevancy"] <= MAX_CONTROL_CASE_RELEVANCY, row
