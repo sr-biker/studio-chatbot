@@ -1,12 +1,17 @@
 # studio-chatbot
 
-FastAPI + LangChain chatbot for a fitness studio. FAQ knowledge in a Google Doc
-is chunked and embedded into pgvector for RAG; an incoming message is routed to one of four
-named agents — **membership_registration**, **support**, **general** — each grounded in the
-FAQ via a shared retrieval tool, plus **summarize**, a cheap-tier agent with no FAQ tool for
+FastAPI + LangChain chatbot for a fitness studio. FAQ knowledge in a Google Doc — plus
+gym-equipment photos, captioned and embedded the same way — is chunked and embedded into
+pgvector for RAG; an incoming message is routed to one of four named agents —
+**membership_registration**, **support**, **general** — each grounded in the FAQ via a
+shared retrieval tool, plus **summarize**, a cheap-tier agent with no FAQ tool for
 tl;dr-style requests or recapping a session once it's marked **resolved**. Each `/chat` call
 returns a `session_id` (server-side, in-memory history) that the client passes back on
-subsequent calls so summarize has a transcript to work with.
+subsequent calls so summarize has a transcript to work with. `membership_registration` also
+has a real (read-only) membership-status lookup tool against a sibling service, on top of
+FAQ-grounded policy advice. System prompts live in the LangSmith Prompt Hub, not hardcoded,
+so CSR staff can edit wording without a deploy — gated to prod via an eval-based promotion
+check (see "Prompt management" below).
 
 ## Status: what's built so far
 
@@ -21,6 +26,29 @@ subsequent calls so summarize has a transcript to work with.
   The app pod itself does no FAQ freshness check at startup — a per-pod Drive
   call doesn't scale with replica count/restarts, so ingestion is purely the
   offline job's concern.
+- **Multimodal RAG for equipment photos.** Gym-equipment images are captioned once by a
+  vision-capable chat model and the caption text is embedded into the same pgvector store
+  as the FAQ (`app/image_loader.py`, `scripts/ingest_equipment_image.py`) — retrieval quality
+  is bounded by caption quality, not pixel similarity. Idempotent on image content hash, same
+  delete-then-add pattern as the FAQ loader; a distinct `image://...` source so the two
+  pipelines' stale-chunk cleanup never collide.
+- **FAQ retrieval result caching.** `app/tools/faq.py` memoizes `(query, k)` similarity
+  searches in-process (`functools.lru_cache`) — safe for the process lifetime since FAQ
+  content only changes via a fresh ingest + redeploy, never mid-process.
+- **Prompt management via LangSmith Hub, with an eval-gated promotion path.** Each agent's
+  system prompt is pulled from the Hub at a pinned ref (`app/prompts.py`,
+  `settings.<route>_prompt_ref`), not hardcoded, so CSR/support staff can edit prompt wording
+  without an engineer touching code. Prod pins a specific commit hash rather than tracking
+  "latest," and `scripts/promote_prompt.py` is the gate: it runs a candidate prompt edit
+  through both a judge-scored eval suite and RAGAS (faithfulness/answer-relevancy/context-
+  precision, using a separate stronger judge model than the one generating replies, to avoid
+  self-preference bias and false-positive zeroing) before saying whether it's safe to pin.
+  Falls back to hardcoded constants in `app/agents/*.py` if the Hub is unreachable.
+- **Real (read-only) membership status lookup.** `MEMBERSHIP_REGISTRATION` can call
+  `lookup_membership_status` (`app/tools/studio_api.py`) against a sibling membership
+  service, by exact email or phone only (never by name) — narrows, but doesn't fully close,
+  the lack of caller identity on an unauthenticated `/chat`. Still advisory for anything
+  that *changes* a membership — see "Known divergences" below.
 - **Runtime safety.** Every `/chat` message is checked against OpenAI's Moderation API before
   reaching any agent or the session store; flagged messages get a 400.
 - **Observability.** Every chat turn is logged in one line (session_id, route, message, reply);
@@ -52,9 +80,12 @@ See [docs/WORKFLOWS.md](docs/WORKFLOWS.md) for detailed flowcharts of each code 
 POST /chat --> Router (keyword short-circuit, then LLM classifier)
                  |
                  +--> MEMBERSHIP_REGISTRATION agent --> search_studio_faq tool --> pgvector
+                 |                                  --> lookup_membership_status tool --> membership service
                  +--> SUPPORT agent                 --> search_studio_faq tool --> pgvector
                  +--> GENERAL agent                  --> search_studio_faq tool --> pgvector
                  +--> SUMMARIZE agent (gpt-5-nano, no tools)
+
+data/faq.md + equipment photos --> pgvector (offline ingest, see below)
 ```
 
 - `app/faq_loader.py` — pulls `faq.md` (a Google Doc in prod — the single source of truth, so
@@ -64,10 +95,24 @@ POST /chat --> Router (keyword short-circuit, then LLM classifier)
   — re-running with unchanged FAQ text is a no-op; changed text deletes and re-ingests. Runs
   offline (`scripts/ingest_faq.py`, a Kubernetes `Job`), not from the app pod's own startup —
   see `docs/WORKFLOWS.md` workflows 1 and 1b.
+- `app/image_loader.py` — captions gym-equipment photos with a vision-capable chat model and
+  embeds the caption text into the same pgvector store, same content-hash idempotency and
+  delete-then-add pattern as the FAQ loader. Runs offline (`scripts/ingest_equipment_image.py`),
+  one image at a time.
 - `app/router.py` — cheap keyword short-circuit (join/register/membership/etc → membership
   registration) then a temperature-0 LLM classifier for anything ambiguous.
-- `app/agents/` — one system prompt per named agent, all sharing the same FAQ retrieval tool
-  and tool-calling loop (`app/assistant.py`).
+- `app/prompts.py` — resolves each agent's system prompt from the LangSmith Prompt Hub at a
+  pinned ref (`settings.<route>_prompt_ref`), falling back to the hardcoded constants in
+  `app/agents/*.py` if the Hub is unreachable.
+- `app/agents/` — one system prompt per named agent (pulled via `app/prompts.py`), all
+  sharing the FAQ retrieval tool and tool-calling loop (`app/assistant.py`);
+  `MEMBERSHIP_REGISTRATION` additionally gets `lookup_membership_status`
+  (`app/tools/studio_api.py`).
+- `app/tools/faq.py` — the shared FAQ retrieval tool; caches `(query, k)` similarity-search
+  results in-process for the life of the pod.
+- `app/tools/studio_api.py` — calls the sibling membership service's
+  `GET /api/memberships/lookup` (email or phone only, never by name) for real membership
+  status, sandboxed so `/chat` can't be used to browse other members' records by name.
 - `app/session_store.py` — in-memory, per-process history keyed by `session_id`; single pod
   today, so history doesn't survive a restart or span replicas (fine for summarizing a live
   session; would need a shared store like Redis if that mattered).
@@ -84,8 +129,12 @@ same FAQ source independently. There is no cross-env vector sharing.
 |-----------------------|---------------------------------|------------------------------------------------|
 | Chat / agents / router | OpenAI (`gpt-4o-mini`)         | OpenAI (`gpt-4o-mini`, override via `chatModelName`) |
 | Summarize agent         | OpenAI (`gpt-5-nano`)          | OpenAI (`gpt-5-nano`, override via `summarizeModelName`) |
+| Equipment image captioning | OpenAI (`gpt-4o-mini`, vision-capable) | same |
+| Eval/promotion RAGAS judge | OpenAI (`gpt-4o`, `scripts/promote_prompt.py` / `evals/test_ragas_faq.py`) | same |
 | Embeddings              | OpenAI (`text-embedding-3-small`) | OpenAI (`text-embedding-3-small`)           |
 | Vector store            | pgvector (helm, on kind)        | pgvector (helm, on k8s)                        |
+| Prompt source            | LangSmith Prompt Hub (`ref="latest"`) | LangSmith Prompt Hub (pinned commit hash per route) |
+| Membership status lookup | sibling `membership` service (docker-compose, `localhost:8082`) | sibling `membership` service (`membershipApiBaseUrl`) |
 
 Chat/agents/router call OpenAI directly in both profiles. `OPENAI_API_KEY` is required in prod
 for both chat and embeddings, plus AWS credentials for S3 and optionally Secrets Manager.
@@ -197,17 +246,33 @@ None of this is wired into CI/CD yet — it'd sit alongside the SAST/DAST pipeli
 above) — these are CI-gated regression checks against `data/faq.md`.
 
 - `evals/test_ragas_faq.py` — RAGAS faithfulness / answer-relevancy / context-precision over
-  the FAQ RAG loop.
+  the FAQ RAG loop. Judges with a separate, stronger model (`gpt-4o`) than the one generating
+  replies (`gpt-4o-mini`) — using the same model for both risks self-preference bias, and
+  `gpt-4o-mini` as judge was found to zero out genuinely relevant replies over stylistic
+  noise (see "Prompt management" above for the concrete failure case). Needs the
+  `.venv-py313` interpreter, not whatever Python runs the rest of the suite — `ragas`'s
+  `nest_asyncio` dependency is incompatible with Python 3.14's `asyncio.wait_for`/
+  `asyncio.timeout` (see `requirements-evals.txt`):
+  ```bash
+  python3.13 -m venv .venv-evals && source .venv-evals/bin/activate
+  pip install -r requirements.txt -r requirements-evals.txt
+  ```
+- `evals/test_llm_judge_evals.py` — LLM-as-judge pass/fail scoring over reply quality,
+  separate from RAGAS's metric-based scoring.
 - `evals/test_router_evals.py` — openai/evals-style suite: routing "match" cases (message →
   expected route) and reply "includes" cases (reply must mention phrases actually present in
   the FAQ, i.e. groundedness), structured the way an `openai/evals` YAML eval is shaped
   (input/ideal/grading) without depending on the `openai/evals` package itself.
 
-Both need a live DB + `OPENAI_API_KEY` and are skipped unless explicitly enabled:
+These need a live DB + `OPENAI_API_KEY` and are skipped unless explicitly enabled:
 
 ```bash
 RUN_RAGAS_EVALS=1 RUN_ROUTER_EVALS=1 OPENAI_API_KEY=... pytest evals -q
 ```
+
+`scripts/langsmith_baseline.py` and `scripts/langsmith_ragas.py` run the same judge/RAGAS
+checks against a LangSmith-hosted dataset (`DATASET_NAME`) rather than pytest fixtures — what
+`scripts/promote_prompt.py` (see "Prompt management" above) reuses to gate a Hub prompt edit.
 
 ## Kubernetes / Helm (prod)
 
@@ -291,9 +356,37 @@ Two different kinds of upgrade, two different risk profiles:
 
 - "Membership registration" and "support" are chat *advisory* agents grounded in the FAQ, not a
   transactional booking system — matches the FAQ's own guidance ("register via the member
-  portal, mobile app, or front desk"); this bot explains policy and process, it doesn't call a
-  booking API (there isn't one in scope here).
+  portal, mobile app, or front desk"); this bot explains policy and process and can look up
+  existing membership status (`lookup_membership_status`), but it doesn't call a booking API to
+  create/change/cancel anything (there isn't one wired up yet — see "Next steps").
 - Evals are offline/CI-gated only, not runtime guardrails — see "Runtime safety" / "Evals" above.
+
+## Prompt management (LangSmith Hub)
+
+Each named agent's system prompt lives in the LangSmith Prompt Hub, not hardcoded — see
+`app/prompts.py`. This lets CSR/support staff edit prompt wording directly in the Hub
+(Playground or repo page) without an engineer touching `app/agents/*.py` or shipping a deploy.
+
+- **Seeding.** `python -m scripts.push_prompts` pushes the current hardcoded fallback prompts
+  to the Hub the first time (`studio-chatbot-support`, `studio-chatbot-general`,
+  `studio-chatbot-membership-registration`).
+- **Local dev** resolves each prompt at `ref="latest"` by default, so an edit in the Hub
+  Playground is immediately visible on the next chat turn — no promotion step needed.
+- **Prod pins a specific commit hash**, not "latest" (`settings.<route>_prompt_ref`, set via
+  `values-prod.yaml`'s `config.supportPromptRef` / `generalPromptRef` /
+  `membershipPromptRef`), so an in-progress CSR edit never reaches prod traffic on its own.
+- **Promotion gate.** `scripts/promote_prompt.py <prompt-name>` pulls a prompt's `:latest`
+  commit and runs it through both a judge-scored eval suite (reusing
+  `scripts/langsmith_baseline.py`'s dataset/evaluator) and RAGAS
+  (faithfulness/answer-relevancy/context-precision, same thresholds as
+  `evals/test_ragas_faq.py`), then prints the commit hash to pin if both pass. The RAGAS judge
+  intentionally uses a *different, stronger* model (`gpt-4o`) than the one generating replies
+  (`gpt-4o-mini`) — sharing a model between generator and judge risks self-preference bias, and
+  `gpt-4o-mini` as judge was independently found to zero out perfectly relevant replies just for
+  ending with a "contact the front desk" pointer (RAGAS's `answer_relevancy` noncommittal
+  detector misfiring). Promotion itself (bumping the pinned ref in `values-prod.yaml`) is a
+  manual config change — this script only says whether a pending edit is safe to promote. Needs
+  the `.venv-py313` interpreter for the RAGAS half (see "Evals" below for why).
 
 ## Next steps
 
@@ -325,11 +418,13 @@ Two different kinds of upgrade, two different risk profiles:
   transactional store, so this app calls it over an API rather than holding a direct
   connection to someone else's database -- keeps the two lifecycles (vector cache vs. real
   state) independently upgradable/ownable.
-- **Real booking/registration API calls.** Per "Known divergences" above, membership/support
-  are advisory-only today. Wiring `MEMBERSHIP_REGISTRATION`'s agent to an actual booking API
-  (as a tool, same shape as `search_studio_faq`) would move it from "explains the process" to
-  "completes the transaction" -- see the OTP + Keycloak token exchange bullet below for the
-  identity piece this needs.
+- **Real booking/registration API calls (write path).** `MEMBERSHIP_REGISTRATION` can already
+  look up existing status read-only (`lookup_membership_status`, see "Known divergences"
+  above), but still can't create, change, or cancel anything. Wiring a
+  `register_for_membership`-style tool (same shape as `lookup_membership_status`) to an actual
+  booking API would move it from "explains the process" to "completes the transaction" -- see
+  the OTP + Keycloak token exchange bullet below for the identity piece this needs before a
+  write path is safe to expose on an unauthenticated `/chat`.
 - **Agentic invocation of this API.** Right now every caller is a human via `/chat`. As other
   internal services or agents start calling studio-chatbot programmatically (e.g. an
   orchestrator agent treating this service as one of its own tools), that likely means:
@@ -388,7 +483,7 @@ Two different kinds of upgrade, two different risk profiles:
   conversation to completion, not retrying a failed call) and shouldn't be conflated with retry.
 - **Keycloak-based JWT authentication.** `POST /chat` and `GET /internal/faq/search` are both
   unauthenticated today. Add a FastAPI dependency that validates a bearer JWT against this
-  org's existing Keycloak (see `~/mystudio/authapi`) JWKS endpoint, required on `/internal/*`
+  org's existing Keycloak (see `~/projects/keycloak`) JWKS endpoint, required on `/internal/*`
   at minimum, `/chat` too if end users should be identified rather than anonymous.
 - **Real membership registration via OTP + Keycloak token exchange.** For
   `MEMBERSHIP_REGISTRATION` to actually complete a transaction (not just explain the process --
