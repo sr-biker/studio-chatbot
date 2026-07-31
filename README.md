@@ -257,6 +257,24 @@ above) — these are CI-gated regression checks against `data/faq.md`.
   python3.13 -m venv .venv-evals && source .venv-evals/bin/activate
   pip install -r requirements.txt -r requirements-evals.txt
   ```
+  Latest local run (2026-07-31, `SUPPORT` agent, `gpt-4o` judge, against the current
+  `data/faq.md`; 7 real cases + 1 `expect_low_relevancy` control from
+  `evals/faq_eval_dataset.py` — small enough that a couple of borderline gradings can move
+  the mean a fair bit, so treat this as a directional health check, not a leaderboard
+  number):
+
+  | Metric | Score | Threshold |
+  |---|---|---|
+  | Faithfulness | 0.80 | ≥ 0.80 |
+  | Answer relevancy | 0.97 | ≥ 0.80 |
+  | Context precision | 0.90 | ≥ 0.80 |
+  | Control-case relevancy (expect low) | 0.00 | ≤ 0.30 |
+
+  All four passed. Re-run via
+  `RUN_RAGAS_EVALS=1 pytest evals/test_ragas_faq.py -q` (needs a live pgvector with the FAQ
+  ingested, and `OPENAI_API_KEY`) — the pytest run only asserts pass/fail, not the numbers
+  above; get the raw scores by calling `ragas.evaluate(...)` directly the way
+  `test_faq_rag_meets_ragas_thresholds` does, or add a `print(main_scores)` locally.
 - `evals/test_llm_judge_evals.py` — LLM-as-judge pass/fail scoring over reply quality,
   separate from RAGAS's metric-based scoring.
 - `evals/test_router_evals.py` — openai/evals-style suite: routing "match" cases (message →
